@@ -1,0 +1,237 @@
+# CLI contract
+
+Stable commands. Range may add flags, but existing flags keep their meaning.
+
+Flags may appear before or after positional arguments. Everything after a bare
+`--` is the workload command, so it keeps its own flags.
+
+## The environment surface
+
+These commands cover normal use. None of them requires you to know that a block
+device is involved.
+
+```bash
+range build --from-oci IMAGE [-o FILE]    # an environment from a container image
+range build <dir> [-o FILE]               # one from a directory
+range publish <artifact> s3://bucket/key  # upload it, once
+range shell <uri>                         # enter it, without downloading it
+range run <uri> -- COMMAND...             # run one command inside it
+range serve <uri> [--addr HOST:PORT]      # expose it as a local URL, by range
+range inspect <uri>                       # identity, size, cache state
+```
+
+By default, `range build` writes a compressed [Range artifact](ARTIFACT_FORMAT.md)
+named `<image>.range`. When Range reads a chunk, it verifies the chunk against
+the SHA-256 in the index. A mismatch is an error, and Range does not serve the
+chunk into a filesystem.
+
+| `build` flag | Default | Meaning |
+| --- | --- | --- |
+| `--from-oci IMAGE` | none | Build from a container image. No container runtime is needed |
+| `--fs erofs\|ext4` | `erofs` | Filesystem inside. ext4 is for kernels without EROFS |
+| `--size SIZE` | `20GiB` | Logical size, ext4 only. EROFS is sized to its contents |
+| `--output`, `-o` | `<image>.range` | Where to write it |
+| `--format range\|raw` | `range` | Compressed artifact, or a plain image you can loop-mount |
+| `--chunk-size SIZE` | `1MiB` | Chunk size. Range aligns large files to it |
+
+`<uri>` is `s3://bucket/key`, `https://host/path`, or a local path.
+
+`range serve` puts the same bytes behind HTTP on localhost (default
+`127.0.0.1:8003`), at `/<last path element>`. GET, HEAD, single and multi-range
+requests and `If-None-Match` work. The ETag is the artifact identity. Reads go
+through the cache. Range records them under the workload name `serve` (change it
+with `--workload`) and saves the profile on Ctrl-C.
+
+Range answers a request only when its `Host` is an IP address or `localhost`. As
+a result, a web page cannot reach the endpoint by rebinding its own domain.
+`--allow-host a,b` admits other names.
+
+`range publish` is the only command that writes to object storage. There is no
+`range pull`: the whole artifact moves exactly once, when you publish it.
+
+| `publish` flag | Default | Meaning |
+| --- | --- | --- |
+| `--part-size SIZE` | `64MiB` | Multipart part size. Minimum 5MiB |
+| `--parallel N` | `8` | Concurrent part uploads |
+| `--endpoint URL` | `$RANGE_S3_ENDPOINT` | S3-compatible endpoint |
+
+## Environments
+
+```bash
+range shell <uri> [flags] [-- COMMAND...]
+range run <uri> [flags] -- COMMAND...
+```
+
+`run` is `shell` with a command. It refuses to start without a command, so a CI
+job or an agent cannot open an interactive shell by accident. Range resolves a
+bare command name against the environment's own `PATH`, not the host's. As a
+result, `range run <uri> -- go test ./...` finds the toolchain that the image
+ships.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--workload NAME` | `interactive` | Profile identity, so unrelated workloads do not collide |
+| `--workdir PATH` | from image metadata | Directory to start in |
+| `--shell PATH` | from image metadata | Shell to execute |
+| `--upper-dir PATH` | none | Where writes land. Setting it implies that they persist |
+| `--name NAME` | none | Named environment whose writes survive exit |
+| `--keep` | off | Keep this session's writable layer |
+| `--profile off\|record\|auto` | `auto` | Working-set profile handling |
+| `--prefetch-limit SIZE` | `256MiB` | Ceiling on profile prefetch |
+
+With no `COMMAND`, an interactive shell starts. With a `COMMAND`, the command
+runs non-interactively, and the exit status is the workload's:
+
+```bash
+range shell s3://bucket/dev.range --workload go-test -- go test ./...
+```
+
+This requires root, the `nbd` module, and `mount`, `umount`, `unshare` from
+util-linux. Exports are read-only. Writes land in a local overlay.
+
+The environment is an isolation boundary, not a security boundary. It has none
+of these controls:
+
+- a user namespace
+- a network namespace
+- a seccomp filter
+- a capability drop
+- a cgroup limit
+
+The workload runs as root. `/dev` is a private tmpfs that holds only the
+standard nodes and a private devpts. The host's disks are therefore not in front
+of the workload. However, a determined process inside the environment is still
+root on the host kernel. Do not use the environment as the only barrier between
+you and code that you do not trust.
+
+## Building
+
+```bash
+range build <rootfs-dir> [--output FILE]
+range build --from-oci <image> [--output FILE]
+```
+
+`range build` writes an EROFS filesystem, in Go. It preserves permissions
+(including setuid), ownership, hardlinks, symlinks, device nodes and mtimes. It
+does not write extended attributes. It needs no `mkfs` and no e2fsprogs. The
+image is exactly as large as its contents. The same tree always produces the
+same bytes.
+
+Range aligns files of a chunk or more to the chunk size, so identical files
+produce identical chunks across artifacts. `--fs ext4 --size SIZE` builds the
+previous way and needs `mkfs.ext4`.
+
+`--from-oci` pulls a container image directly from its registry, with no
+container runtime and no daemon. It carries the image's own `PATH`, environment
+and working directory into the artifact. As a result, a shell on the artifact
+behaves like the image:
+
+```bash
+range build --from-oci golang:1.23 --output go.range
+```
+
+`--platform linux/amd64` pulls the image for another architecture, so a Mac can
+build for an x86 fleet. The default is the host's platform. Range records the
+platform in the artifact. An `image@sha256:...` reference is pinned. Range checks
+each of these against its digest: the manifest, the platform manifest that an
+index names, and the config.
+
+Range verifies each layer against its digest and applies it to a tree in
+memory. Range never unpacks a layer onto the host, so a layer cannot write
+outside the image through a symlink or hardlink. Ownership, mode and setuid bits
+come from the layer headers. An EROFS build therefore needs no root and, on
+macOS, no VM. `--fs ext4` unpacks to disk through `os.Root` and needs root to
+keep ownership. If you run it without root, it refuses.
+
+## Debug
+
+The plumbing is still reachable, but it is not in the way.
+
+```bash
+range debug read <uri> --offset N --length N   # a byte range, to stdout
+range debug cat <uri>                          # the whole artifact, to stdout
+range debug nbd serve <uri> [--addr host:port] # export over TCP, any platform
+range debug nbd attach <uri> /dev/nbdN         # attach to the kernel, Linux
+range debug info <uri>                         # same as range inspect
+```
+
+Exports are read-only. `--read-only=false` is an error, not a silent downgrade.
+
+## Profiles
+
+```bash
+range profile path   <uri> [--workload NAME]
+range profile show   <uri> [--workload NAME]
+range profile export <uri> [--workload NAME] [--output FILE]
+range profile import <file>
+range profile clear  [<uri>] [--workload NAME]
+```
+
+Exported profiles are portable. If you copy one to another machine and import
+it, the next cold run starts with a learned working set. See `PROFILE_FORMAT.md`.
+
+## State
+
+```bash
+range stats [<uri>]      # session and lifetime metrics
+range cache stats        # local byte cache usage
+range cache clear [uri]  # remove materialized bytes only
+range profile clear      # remove learned profiles only
+range reset [uri]        # remove both
+```
+
+The byte cache and the learned profiles are separate state. Benchmarks need to
+clear them independently. For this reason, no single command silently clears
+both, except `reset`.
+
+## Host
+
+```bash
+range doctor             # what this host needs, where each piece comes from, and what it doesn't need
+```
+
+## Common flags
+
+The artifact commands accept these flags:
+
+| Flag | Environment variable | Default |
+| --- | --- | --- |
+| `--block-size` | `RANGE_BLOCK_SIZE` | `1MiB` |
+| `--memory-cache` | `RANGE_MEMORY_CACHE_SIZE` | `64MiB` |
+| `--cache-size` | `RANGE_DISK_CACHE_SIZE` | `10GiB` |
+| `--cache-dir` | `RANGE_CACHE_DIR` | `~/.cache/range` |
+| `--max-range` | `RANGE_MAX_RANGE_SIZE` | `8MiB` |
+| `--prefetch on\|off` | `RANGE_PREFETCH` | `on` |
+| `--profile` | `RANGE_PROFILE` | `auto` |
+| `--prefetch-limit` | `RANGE_PREFETCH_LIMIT` | `256MiB` |
+| `--trace PATH` | none | off |
+
+Other environment variables:
+
+| Variable | Purpose |
+| --- | --- |
+| `RANGE_S3_ENDPOINT` | S3-compatible endpoint (R2, MinIO). Setting it enables path-style URLs |
+| `RANGE_LIMA_INSTANCE` | Lima VM to use on macOS (default `range-linux`) |
+
+## macOS
+
+`range shell` and `range build` work on macOS. On first use, range creates a
+small Lima VM and installs a Linux build of itself inside the VM. Range installs
+nothing else in the VM, because the NBD client is built into range. Range Core,
+your credentials, the byte cache and the profiles all stay on the Mac. Only the
+kernel work happens in the VM, which range reaches over the NBD protocol through
+an ssh tunnel.
+
+On macOS, range requires `limactl` (`brew install lima`) and a Linux build of
+range. Range takes the Linux build from one of these sources:
+
+- `RANGE_GUEST_BINARY`
+- a `range-linux-<arch>` beside the binary
+- a cross-compile, when you run range from the source tree
+
+`range doctor` reports the state.
+
+## Internal
+
+`__child` and `__guest` are internal re-execution entry points. They are not a
+stable interface.
