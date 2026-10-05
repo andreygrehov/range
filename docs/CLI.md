@@ -56,7 +56,11 @@ registry, or reads of the kept layer, checked against a SHA-256 for every
 64 KiB. Range first looks for a layer's index in the catalog,
 [range-index](https://github.com/andreygrehov/range-index), and uses one only
 if it names the same layer digest and size. `RANGE_INDEX_URL` sets another
-catalog, and `RANGE_INDEX_URL=off` turns it off. Range does not support private registries yet.
+catalog, and `RANGE_INDEX_URL=off` turns it off. The catalog also holds a
+startup profile for popular images, so their first run prefetches the blocks
+that startup reads. `RANGE_REGISTRY_MIRROR=mirror.gcr.io` reads Docker Hub
+images from a mirror first, and falls back to Docker Hub. Range does not
+support private registries yet.
 
 A Hugging Face repository becomes a read-only filesystem of its files. Range
 lists the files through the Hub API and reads each one with ranged requests.
