@@ -92,6 +92,11 @@ func guestBinarySource() (string, error) {
 			if err != nil {
 				return "", err
 			}
+			// A guest built after this binary is from the same tree, or a
+			// newer one: building it again costs a second for nothing.
+			if newerThanSelf(out) {
+				return out, nil
+			}
 			build := exec.Command("go", "build", "-o", out, "./cmd/range")
 			build.Dir = dir
 			build.Env = append(os.Environ(), "GOOS=linux", "GOARCH="+runtime.GOARCH)
@@ -113,6 +118,20 @@ func guestBinarySource() (string, error) {
 	return "", fmt.Errorf("no Linux build of range available; set RANGE_GUEST_BINARY, "+
 		"or place range-linux-%s next to this binary, "+
 		"or run from the source tree with Go installed", runtime.GOARCH)
+}
+
+// newerThanSelf reports whether path was written after this executable.
+func newerThanSelf(path string) bool {
+	self, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	selfInfo, err := os.Stat(self)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(path)
+	return err == nil && info.ModTime().After(selfInfo.ModTime())
 }
 
 // guestBinaryAvailable reports whether guestBinarySource will find a guest

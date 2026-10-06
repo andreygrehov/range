@@ -10,7 +10,9 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"time"
 )
 
 //go:embed init.sh
@@ -21,24 +23,23 @@ var dhcpScript []byte
 
 // Initrd returns a gzip'd initramfs holding the init script, busybox, the
 // modules from assets and guest, the Linux build of Range. It is built once
-// for each guest binary, known by its path, size and time, and kept beside
-// the assets; older ones are removed.
+// for each guest binary, known by its contents, and kept beside the assets
+// with the few built before it: a source tree and an installed range each
+// bring their own guest.
 func Initrd(assets, guest string) (string, error) {
-	info, err := os.Stat(guest)
+	guestData, err := os.ReadFile(guest)
 	if err != nil {
-		return "", fmt.Errorf("the guest binary: %w", err)
+		return "", fmt.Errorf("read the guest binary: %w", err)
 	}
 	key := sha256.New()
 	key.Write(initScript)
 	key.Write(dhcpScript)
-	fmt.Fprintf(key, "%s|%d|%d", guest, info.Size(), info.ModTime().UnixNano())
+	key.Write(guestData)
 	path := filepath.Join(assets, "initrd-"+hex.EncodeToString(key.Sum(nil))[:16]+".gz")
 	if _, err := os.Stat(path); err == nil {
+		now := time.Now()
+		os.Chtimes(path, now, now) // the newest stay; see pruneInitrds
 		return path, nil
-	}
-	guestData, err := os.ReadFile(guest)
-	if err != nil {
-		return "", fmt.Errorf("read the guest binary: %w", err)
 	}
 
 	order, err := os.ReadFile(filepath.Join(assets, "modules", "order"))
@@ -84,14 +85,29 @@ func Initrd(assets, guest string) (string, error) {
 	if err := tmp.Close(); err != nil {
 		return "", err
 	}
-	old, _ := filepath.Glob(filepath.Join(assets, "initrd-*.gz"))
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return "", err
 	}
-	for _, stale := range old {
+	pruneInitrds(assets, 4)
+	return path, nil
+}
+
+// pruneInitrds keeps the keep most recently used initramfs files.
+func pruneInitrds(assets string, keep int) {
+	paths, _ := filepath.Glob(filepath.Join(assets, "initrd-*.gz"))
+	if len(paths) <= keep {
+		return
+	}
+	used := map[string]time.Time{}
+	for _, p := range paths {
+		if info, err := os.Stat(p); err == nil {
+			used[p] = info.ModTime()
+		}
+	}
+	sort.Slice(paths, func(i, j int) bool { return used[paths[i]].After(used[paths[j]]) })
+	for _, stale := range paths[keep:] {
 		os.Remove(stale)
 	}
-	return path, nil
 }
 
 // cpioWriter writes the "newc" cpio format the kernel unpacks an initramfs

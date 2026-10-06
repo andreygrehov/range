@@ -3,6 +3,7 @@ package vm
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -91,14 +92,25 @@ func TestInitrdHoldsWhatTheVMBootsFrom(t *testing.T) {
 		t.Errorf("proc mode = %o, want a directory", proc.mode)
 	}
 
-	// A new guest binary gets a new initramfs, and the old one goes.
+	// The same guest rewritten keeps its initramfs; a new guest gets a new one.
+	os.WriteFile(guest, []byte("the guest binary, odd length"), 0o755)
+	if again, _ := Initrd(assets, guest); again != path {
+		t.Fatalf("a rewritten but identical guest built %q", again)
+	}
 	os.WriteFile(guest, []byte("a newer guest binary, longer than before"), 0o755)
 	newer, err := Initrd(assets, guest)
 	if err != nil || newer == path {
 		t.Fatalf("a changed guest reused %q (%v)", newer, err)
 	}
-	if _, err := os.Stat(path); !os.IsNotExist(err) {
-		t.Errorf("the outdated initramfs was kept")
+	// A few stay, so two guests in turn do not rebuild each other's.
+	for i := 0; i < 5; i++ {
+		os.WriteFile(guest, []byte(fmt.Sprintf("guest %d", i)), 0o755)
+		if _, err := Initrd(assets, guest); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if kept, _ := filepath.Glob(filepath.Join(assets, "initrd-*.gz")); len(kept) != 4 {
+		t.Errorf("%d initramfs files kept, want 4", len(kept))
 	}
 }
 
