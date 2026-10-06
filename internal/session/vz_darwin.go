@@ -111,6 +111,11 @@ func (vzRuntime) Run(ctx context.Context, opts Options, onReady func()) error {
 	for i, d := range opts.Dirs {
 		cfg.Guest.Shares = append(cfg.Guest.Shares, vm.Share{Tag: vm.ShareTag(i), Path: d.Path, Target: d.Target})
 	}
+	cfg.Guest.Env = opts.Env
+	for _, p := range opts.Ports {
+		cfg.Guest.Ports = append(cfg.Guest.Ports, p.Port)
+		cfg.Publish = append(cfg.Publish, vm.Publish{HostIP: p.HostIP, HostPort: p.HostPort})
+	}
 	if terminal {
 		cfg.Guest.Rows, cfg.Guest.Cols = windowSize(int(os.Stdout.Fd()))
 	}

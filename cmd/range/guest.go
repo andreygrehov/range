@@ -26,6 +26,11 @@ func commandGuest(args []string) error {
 	workdir := fs.String("workdir", "", "working directory inside the environment")
 	shellPath := fs.String("shell", "", "shell to execute")
 	defaultCommand := fs.Bool("default-command", false, "with no command, run the environment's own")
+	var env []string
+	fs.Func("env", "KEY=VALUE to set in the environment (repeatable)", func(v string) error {
+		env = append(env, v)
+		return nil
+	})
 	var mounts []session.Mount
 	var endpoints []string
 	fs.Func("mount-nbd", "TARGET=host:port of a further filesystem to mount (repeatable)", func(v string) error {
@@ -82,7 +87,7 @@ func commandGuest(args []string) error {
 	}
 	opts := session.Options{
 		Session: sess, Workload: *workload, Workdir: *workdir,
-		ShellPath: *shellPath, Command: guestRest, Mounts: mounts, DefaultCommand: *defaultCommand,
+		ShellPath: *shellPath, Command: guestRest, Mounts: mounts, Env: env, DefaultCommand: *defaultCommand,
 	}
 	return session.MountAndRun(context.Background(), opts, device, func() {
 		session.ReportReadyToHost(*readyPort)

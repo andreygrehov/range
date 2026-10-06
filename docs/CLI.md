@@ -54,7 +54,10 @@ once, checks it against its digest and indexes it: the offset of every file, and
 the points to resume gzip or zstd decompression from. Range keeps the index and
 the layer in `$RANGE_CACHE_DIR/oci`. Later reads are ranged requests to the
 registry, or reads of the kept layer, checked against a SHA-256 for every
-64 KiB. Range first looks for a layer's index in the catalog,
+64 KiB. When a session reads an eighth of a layer of 32 MB or more, Range
+downloads the rest of that layer whole in the background, up to three layers at
+once, as `docker pull` does, and keeps it. A workload that reads most of an
+image, such as a build, then costs about one pull, not thousands of requests. Range first looks for a layer's index in the catalog,
 [range-index](https://github.com/andreygrehov/range-index), and uses one only
 if it names the same layer digest and size. `RANGE_INDEX_URL` sets another
 catalog, and `RANGE_INDEX_URL=off` turns it off. The catalog also holds a
@@ -112,6 +115,13 @@ ships.
 | `--profile off\|record\|auto` | `auto` | Working-set profile handling |
 | `--prefetch-limit SIZE` | `256MiB` | Ceiling on profile prefetch |
 | `--mount SOURCE:/path` | none | Show a remote source read-only at `/path`, e.g. `hf://org/model:/model`, or a directory of this machine read-write, e.g. `.:/work`. Repeatable |
+| `-e`, `--env KEY=VALUE` | none | Set a variable over the image's. `-e KEY` passes this shell's value, and leaves it out when it is unset. Repeatable |
+| `-p`, `--publish [IP:]HOSTPORT:PORT` | none | Publish a port of the environment on this machine, on `127.0.0.1` unless `IP` says otherwise. Repeatable |
+
+In Range's VM on a Mac, a published port reaches a server inside whether it
+listens on `0.0.0.0` or only on `127.0.0.1`. On Linux and in Lima, the
+environment shares the host's network, so a server inside is already on the
+host's port. Range relays only a port published under another number.
 
 With no `COMMAND`, an interactive shell starts. With a `COMMAND`, the command
 runs non-interactively, and the exit status is the workload's:

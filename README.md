@@ -21,6 +21,12 @@ With the current directory inside, read-write, the way `docker run -v` does it:
 range run python:3.12 --mount .:/work --workdir /work -- python3 app.py
 ```
 
+With a port published and a variable set, as `docker run -p` and `-e` do:
+
+```bash
+range run python:3.12 -p 8000 -e DEBUG=1 -- python3 -m http.server 8000
+```
+
 A chat model, from nothing, in one line. Range opens the llama.cpp image from its
 registry and mounts the model repository at `/model`:
 

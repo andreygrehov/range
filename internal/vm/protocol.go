@@ -11,6 +11,9 @@ const (
 	PortStdin   = 1025
 	PortStdout  = 1026
 	PortStderr  = 1027
+	// PortRelay+i carries connections to the i-th published port: the host
+	// connects, and the guest relays to that port on its own 127.0.0.1.
+	PortRelay = 2000
 )
 
 // GuestConfig is the first line on the control connection: what the guest
@@ -25,11 +28,14 @@ type GuestConfig struct {
 	Mounts         []string `json:"mounts,omitempty"`
 	// Shares are directories of the Mac, by virtiofs tag, and where they
 	// appear in the environment.
-	Shares   []Share `json:"shares,omitempty"`
-	Terminal bool    `json:"terminal,omitempty"`
-	Rows     uint16  `json:"rows,omitempty"`
-	Cols     uint16  `json:"cols,omitempty"`
-	Term     string  `json:"term,omitempty"`
+	Shares []Share `json:"shares,omitempty"`
+	// Env sets variables, KEY=VALUE; Ports are published, by number inside.
+	Env      []string `json:"env,omitempty"`
+	Ports    []int    `json:"ports,omitempty"`
+	Terminal bool     `json:"terminal,omitempty"`
+	Rows     uint16   `json:"rows,omitempty"`
+	Cols     uint16   `json:"cols,omitempty"`
+	Term     string   `json:"term,omitempty"`
 }
 
 // Control messages after the config, one per line:
@@ -63,4 +69,12 @@ type HostConfig struct {
 	Disks   []string    `json:"disks"`
 	Console string      `json:"console,omitempty"`
 	Guest   GuestConfig `json:"guest"`
+	// Publish is where on the Mac each of Guest.Ports is published.
+	Publish []Publish `json:"publish,omitempty"`
+}
+
+// Publish is a port of the guest published on the Mac at HostIP:HostPort.
+type Publish struct {
+	HostIP   string `json:"host_ip"`
+	HostPort int    `json:"host_port"`
 }

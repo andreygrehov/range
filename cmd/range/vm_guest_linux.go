@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -112,9 +113,14 @@ func runVMGuest() (int, error) {
 		}
 		dirs = append(dirs, session.Dir{Path: at, Target: share.Target})
 	}
+	for i, port := range cfg.Ports {
+		if err := relayPort(uint32(vm.PortRelay+i), port); err != nil {
+			return 1, err
+		}
+	}
 	opts := session.Options{
 		Session: sess, Workload: cfg.Workload, Workdir: cfg.Workdir, ShellPath: cfg.ShellPath,
-		Command: cfg.Command, Mounts: mounts, Dirs: dirs, DefaultCommand: cfg.DefaultCommand,
+		Command: cfg.Command, Mounts: mounts, Dirs: dirs, Env: cfg.Env, DefaultCommand: cfg.DefaultCommand,
 		ControllingTerminal: cfg.Terminal,
 	}
 	runErr := session.MountAndRun(context.Background(), opts, vm.DiskName(0), func() {
@@ -137,6 +143,35 @@ func runVMGuest() (int, error) {
 		runErr = cleanupErr
 	}
 	return code, runErr
+}
+
+// relayPort takes the host's connections for a published port and relays
+// each to that port here. The environment shares this VM's network, so a
+// server listening on 127.0.0.1 inside is reached too, not only one on
+// 0.0.0.0.
+func relayPort(vsockPort uint32, port int) error {
+	listener, err := vm.ListenHost(vsockPort)
+	if err != nil {
+		return fmt.Errorf("publish port %d: %w", port, err)
+	}
+	target := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				inside, err := net.Dial("tcp", target)
+				if err != nil {
+					conn.Close()
+					return
+				}
+				session.Relay(conn, inside)
+			}()
+		}
+	}()
+	return nil
 }
 
 // waitForResolver waits until DHCP has named a DNS server: a workload that

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/andreygrehov/range/internal/environment"
 	"github.com/andreygrehov/range/internal/erofs"
@@ -79,6 +80,13 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 	}
 	if opts.Workdir != "" {
 		meta.Workdir = opts.Workdir
+	}
+	if len(opts.Env) > 0 && meta.Environment == nil {
+		meta.Environment = map[string]string{}
+	}
+	for _, kv := range opts.Env {
+		key, value, _ := strings.Cut(kv, "=")
+		meta.Environment[key] = value
 	}
 	if opts.ShellPath != "" {
 		meta.Shell = opts.ShellPath

@@ -168,6 +168,11 @@ func (m *Machine) Listen(port uint32) (net.Listener, error) {
 	return m.sockets.Listen(port)
 }
 
+// Connect opens a connection to the guest on a vsock port.
+func (m *Machine) Connect(port uint32) (net.Conn, error) {
+	return m.sockets.Connect(port)
+}
+
 // Stopped is closed once the VM has stopped.
 func (m *Machine) Stopped() <-chan struct{} { return m.stopped }
 

@@ -78,6 +78,10 @@ type Options struct {
 	Mounts []Mount
 	// Dirs are directories of this machine shown read-write inside it.
 	Dirs []Dir
+	// Env sets variables in the environment, KEY=VALUE, over the image's.
+	Env []string
+	// Ports are published on this machine while the session runs.
+	Ports []Port
 	// DefaultCommand runs the environment's own command when Command is
 	// empty, instead of a shell.
 	DefaultCommand bool

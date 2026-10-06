@@ -65,6 +65,9 @@ func (Native) Run(ctx context.Context, opts Options, onReady func()) error {
 			return err
 		}
 	}
+	if err := publishOnHost(sess, opts.Ports); err != nil {
+		return err
+	}
 	return MountAndRun(ctx, opts, device, onReady)
 }
 

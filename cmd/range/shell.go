@@ -49,7 +49,8 @@ func runSession(args []string, defaultCommand bool) error {
 	}
 	var workdir, shellPath, upperDir, name, profileFlag, prefetchLimit, workload string
 	var keep bool
-	var mountSpecs []string
+	var mountSpecs, env []string
+	var ports []session.Port
 	r, c, command, err := openFromArgs("shell", args, func(fs *flag.FlagSet) {
 		fs.Func("mount", "SOURCE:/path: a remote filesystem, read-only, or a directory of this machine, read-write (repeatable)", func(v string) error {
 			if _, _, err := session.ParseMount(v); err != nil {
@@ -58,6 +59,22 @@ func runSession(args []string, defaultCommand bool) error {
 			mountSpecs = append(mountSpecs, v)
 			return nil
 		})
+		publish := func(v string) error {
+			p, err := session.ParsePort(v)
+			ports = append(ports, p)
+			return err
+		}
+		fs.Func("publish", "[IP:]HOSTPORT:PORT, publish a port of the environment here (repeatable)", publish)
+		fs.Func("p", "short for --publish", publish)
+		setEnv := func(v string) error {
+			key, value, ok, err := session.ParseEnv(v)
+			if ok {
+				env = append(env, key+"="+value)
+			}
+			return err
+		}
+		fs.Func("env", "KEY=VALUE, or KEY to pass this shell's value (repeatable)", setEnv)
+		fs.Func("e", "short for --env", setEnv)
 		fs.StringVar(&workload, "workload", profile.DefaultWorkload, "workload name, so profiles do not collide")
 		fs.StringVar(&workdir, "workdir", "", "working directory inside the environment")
 		fs.StringVar(&shellPath, "shell", "", "shell to execute")
@@ -156,7 +173,7 @@ func runSession(args []string, defaultCommand bool) error {
 	opts := session.Options{
 		Reader: r, Config: c, Session: sess, Workload: workload, Workdir: workdir,
 		ShellPath: shellPath, Command: command, UpperDir: upperDir, EnvName: name, Keep: keep,
-		Mounts: mounts, Dirs: dirs, DefaultCommand: defaultCommand,
+		Mounts: mounts, Dirs: dirs, Env: env, Ports: ports, DefaultCommand: defaultCommand,
 	}
 	runErr := host.Run(ctx, opts, func() {
 		sess.State = session.StateReady

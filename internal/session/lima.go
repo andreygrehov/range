@@ -287,6 +287,10 @@ func (l lima) Run(ctx context.Context, opts Options, onReady func()) error {
 	if err != nil {
 		return err
 	}
+	// Lima forwards a port the VM listens on to this Mac by itself.
+	if err := publishOnHost(opts.Session, opts.Ports); err != nil {
+		return err
+	}
 	mountPorts := make([]int, len(opts.Mounts))
 	for i, m := range opts.Mounts {
 		if mountPorts[i], err = serveNBD(opts.Session, m.Reader); err != nil {
@@ -337,6 +341,9 @@ func (l lima) Run(ctx context.Context, opts Options, onReady func()) error {
 	}
 	if opts.DefaultCommand {
 		guest = append(guest, "--default-command")
+	}
+	for _, kv := range opts.Env {
+		guest = append(guest, "--env", kv)
 	}
 	if len(opts.Command) > 0 {
 		guest = append(guest, "--")

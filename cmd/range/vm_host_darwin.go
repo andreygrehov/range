@@ -50,6 +50,15 @@ func commandVMHost(_ []string) error {
 	}
 	defer machine.Close()
 	defer machine.Stop()
+	for i, pub := range cfg.Publish {
+		relay := uint32(vm.PortRelay + i)
+		port := session.Port{HostIP: pub.HostIP, HostPort: pub.HostPort, Port: cfg.Guest.Ports[i]}
+		stop, err := session.Publish(port, func() (io.ReadWriteCloser, error) { return machine.Connect(relay) })
+		if err != nil {
+			return err
+		}
+		defer stop()
+	}
 
 	listen := func(port uint32) (net.Listener, error) { return machine.Listen(port) }
 	controlL, err := listen(vm.PortControl)
@@ -157,6 +166,8 @@ func commandVMHost(_ []string) error {
 	case code = <-status:
 	case <-machine.Stopped():
 		fmt.Fprintf(os.Stderr, "range: the vm stopped before the workload finished%s\n", consoleHint(cfg.Console))
+	case <-parentGone():
+		return errors.New("range ended; stopping its vm")
 	}
 	// The guest closes its output streams before it reports the status.
 	drained := make(chan struct{})
@@ -176,6 +187,21 @@ func commandVMHost(_ []string) error {
 		return session.ExitStatus(code)
 	}
 	return nil
+}
+
+// parentGone is closed if the range that started this process ends without
+// stopping it, killed outright, so its VM does not run on with no one to
+// stop it.
+func parentGone() <-chan struct{} {
+	gone := make(chan struct{})
+	parent := os.Getppid()
+	go func() {
+		for os.Getppid() == parent {
+			time.Sleep(time.Second)
+		}
+		close(gone)
+	}()
+	return gone
 }
 
 func consoleHint(path string) string {
