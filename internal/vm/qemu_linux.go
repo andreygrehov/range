@@ -88,7 +88,7 @@ func StartQEMU(spec Spec, portBase uint32, runDir string) (*QEMU, error) {
 			sockets = append(sockets, socket)
 		}
 	}
-	args := qemuArgs(spec, runtime.GOARCH, cid, portBase, sockets)
+	args := qemuArgs(spec, runtime.GOARCH, qboot(), cid, portBase, sockets)
 
 	m.cmd = exec.Command(QEMUBinary(), args...)
 	m.cmd.Stderr = &m.stderr
@@ -105,10 +105,26 @@ func StartQEMU(spec Spec, portBase uint32, runDir string) (*QEMU, error) {
 	return m, nil
 }
 
-// qemuArgs is QEMU's command line for spec on arch: the kernel and initramfs,
-// the console, the network, vsock, the disks served over NBD, and a
-// virtiofsd socket for each share.
-func qemuArgs(spec Spec, arch string, cid, portBase uint32, shareSockets []string) []string {
+// qemuNetwork is QEMU's user-mode network, which is always the same: the
+// guest's address, the gateway and the resolver, as range.net gives them.
+const qemuNetwork = "10.0.2.15/24,10.0.2.2,10.0.2.3"
+
+// qboot is the path of qboot, a firmware that does no more than start a
+// kernel and so boots about 45 ms sooner than QEMU's own on x86. Debian and
+// Ubuntu ship it with QEMU, and without it QEMU's own firmware does.
+func qboot() string {
+	for _, path := range []string{"/usr/share/qemu/qboot.rom", "/usr/share/seabios/qboot.rom"} {
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
+	return ""
+}
+
+// qemuArgs is QEMU's command line for spec on arch: the firmware, if one is
+// given for x86, the kernel and initramfs, the console, the network, vsock,
+// the disks served over NBD, and a virtiofsd socket for each share.
+func qemuArgs(spec Spec, arch, firmware string, cid, portBase uint32, shareSockets []string) []string {
 	console := spec.Console
 	if console == "" {
 		console = os.DevNull
@@ -123,12 +139,15 @@ func qemuArgs(spec Spec, arch string, cid, portBase uint32, shareSockets []strin
 		"-nodefaults", "-no-user-config", "-display", "none", "-serial", "none", "-monitor", "none",
 		"-no-reboot",
 		"-kernel", spec.Kernel, "-initrd", spec.Initrd,
-		"-append", fmt.Sprintf("console=hvc0 quiet loglevel=3 rdinit=/init range.port=%d", portBase),
+		"-append", fmt.Sprintf("console=hvc0 quiet loglevel=3 rdinit=/init range.port=%d range.net=%s", portBase, qemuNetwork),
 		"-device", "virtio-serial-pci", "-chardev", "file,id=console,path=" + console,
 		"-device", "virtconsole,chardev=console",
 		"-device", "virtio-rng-pci",
 		"-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0",
 		"-device", fmt.Sprintf("vhost-vsock-pci,guest-cid=%d", cid),
+	}
+	if arch != "arm64" && firmware != "" {
+		args = append(args, "-bios", firmware)
 	}
 	for i, url := range spec.Disks {
 		args = append(args,
