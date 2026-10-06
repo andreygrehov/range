@@ -68,6 +68,7 @@ func RunChild(args []string) error {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return fmt.Errorf("parse session: %w", err)
 	}
+	exitWithParent()
 
 	// Keep everything we mount from propagating back to the host.
 	if err := tool.Run("mount", "--make-rprivate", "/"); err != nil {
@@ -320,6 +321,11 @@ func runInNamespaces(ctx context.Context, sessionDir string, controllingTerminal
 	if controllingTerminal {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	}
+	cmd.SysProcAttr = dieWithParent(cmd.SysProcAttr)
+	// The death signal follows the thread that starts unshare, not the
+	// process: keep this goroutine on it until unshare ends.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	if err := cmd.Start(); err != nil {
 		readyWrite.Close()
 		goRead.Close()

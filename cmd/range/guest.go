@@ -89,8 +89,11 @@ func commandGuest(args []string) error {
 		Session: sess, Workload: *workload, Workdir: *workdir,
 		ShellPath: *shellPath, Command: guestRest, Mounts: mounts, Env: env, DefaultCommand: *defaultCommand,
 	}
-	return session.MountAndRun(context.Background(), opts, device, func() {
-		session.ReportReadyToHost(*readyPort)
+	// The session ends with range on the host, however that ends.
+	ctx, hostGone := context.WithCancel(context.Background())
+	defer hostGone()
+	return session.MountAndRun(ctx, opts, device, func() {
+		session.ReportReadyToHost(*readyPort, hostGone)
 	})
 }
 

@@ -311,12 +311,23 @@ func (l lima) Run(ctx context.Context, opts Options, onReady func()) error {
 	}
 	defer readyListener.Close()
 	readyPort := readyListener.Addr().(*net.TCPAddr).Port
+	// The connection then stays open while the session runs. If range ends
+	// without ending the session, killed outright, the guest reads its end
+	// and ends the session: ssh does not tell a command without a terminal.
+	lifeline := make(chan net.Conn, 1)
+	defer func() {
+		select {
+		case conn := <-lifeline:
+			conn.Close()
+		default:
+		}
+	}()
 	go func() {
 		conn, err := readyListener.Accept()
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		lifeline <- conn
 		if _, err := io.ReadFull(conn, make([]byte, 1)); err == nil {
 			onReady()
 			conn.Write([]byte{'G'}) // release the guest once the banner is printed
