@@ -16,6 +16,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/andreygrehov/range/internal/relay"
 	"github.com/andreygrehov/range/internal/session"
 	"github.com/andreygrehov/range/internal/vm"
 )
@@ -42,7 +43,9 @@ func commandVMGuest(_ []string) error {
 }
 
 func runVMGuest() (int, error) {
-	control, err := vm.DialHost(vm.PortControl, 10*time.Second)
+	cmdline, _ := os.ReadFile("/proc/cmdline")
+	ports := vm.PortsFrom(vm.PortBase(string(cmdline)))
+	control, err := vm.DialHost(ports.Control, 10*time.Second)
 	if err != nil {
 		return 1, err
 	}
@@ -60,7 +63,7 @@ func runVMGuest() (int, error) {
 		os.Setenv("TERM", cfg.Term)
 	}
 
-	streams, err := connectStreams(cfg)
+	streams, err := connectStreams(cfg, ports)
 	if err != nil {
 		return 1, err
 	}
@@ -80,6 +83,12 @@ func runVMGuest() (int, error) {
 			switch {
 			case len(fields) == 1 && fields[0] == "go":
 				once.Do(func() { close(proceed) })
+			case len(fields) == 2 && fields[0] == "signal":
+				// Every process but this one, as the terminal signals every
+				// process in its foreground group: the workload, and unshare.
+				if sig, err := strconv.Atoi(fields[1]); err == nil {
+					syscall.Kill(-1, syscall.Signal(sig))
+				}
 			case len(fields) == 3 && fields[0] == "resize" && streams.terminal != nil:
 				rows, _ := strconv.Atoi(fields[1])
 				cols, _ := strconv.Atoi(fields[2])
@@ -167,7 +176,7 @@ func relayPort(vsockPort uint32, port int) error {
 					conn.Close()
 					return
 				}
-				session.Relay(conn, inside)
+				relay.Copy(conn, inside)
 			}()
 		}
 	}()
@@ -197,13 +206,13 @@ type guestStreams struct {
 	outputs  []*os.File // vsock connections the host reads to EOF
 }
 
-func connectStreams(cfg vm.GuestConfig) (*guestStreams, error) {
+func connectStreams(cfg vm.GuestConfig, ports vm.Ports) (*guestStreams, error) {
 	g := &guestStreams{}
-	stdin, err := vm.DialHost(vm.PortStdin, 5*time.Second)
+	stdin, err := vm.DialHost(ports.Stdin, 5*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	stdout, err := vm.DialHost(vm.PortStdout, 5*time.Second)
+	stdout, err := vm.DialHost(ports.Stdout, 5*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +234,7 @@ func connectStreams(cfg vm.GuestConfig) (*guestStreams, error) {
 		g.outputs = []*os.File{stdout}
 		return g, nil
 	}
-	stderr, err := vm.DialHost(vm.PortStderr, 5*time.Second)
+	stderr, err := vm.DialHost(ports.Stderr, 5*time.Second)
 	if err != nil {
 		return nil, err
 	}

@@ -1,8 +1,9 @@
-// Package vm boots the small Linux VM Range runs environments in on a Mac.
+// Package vm boots the small Linux VM Range runs a session in.
 //
 // The VM has no disk image of its own. It boots a kernel and an initramfs,
 // and the environment arrives as a block device served by Range on the host,
-// over NBD. The kernel, its modules and a static busybox come from one
+// over NBD. Apple's Virtualization.framework boots it on a Mac, QEMU with KVM
+// on Linux. The kernel, its modules and a static busybox come from one
 // archive, built by scripts/vm-assets.sh, downloaded once and checked against
 // the SHA-256 below. The initramfs is put together here, with the Linux build
 // of Range inside it.
@@ -20,61 +21,72 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 )
 
-// The archive scripts/vm-assets.sh builds, and where it is published.
-const (
-	AssetName   = "range-vm-6.12.107+deb13-cloud-arm64.tar.gz"
-	AssetSHA256 = "f79d0e6d80e18457e9834639d87634de2d40a2506356197e099685a276f814be"
-	AssetURL    = "https://github.com/andreygrehov/range/releases/download/vm-1/" + AssetName
-)
+// The archives scripts/vm-assets.sh builds, one for each architecture, and
+// where they are published.
+var archives = map[string]struct{ name, sha256 string }{
+	"arm64": {"range-vm-6.12.107+deb13-cloud-arm64.tar.gz", "28486894c7df92e27c42e37390fd56d4959696484e719479ddd061dd982ae07b"},
+	"amd64": {"range-vm-6.12.107+deb13-cloud-amd64.tar.gz", "9809d779b710a425f12c6cfaebb11033518768544b855c82e920ac737b2d09a3"},
+}
 
-// Assets returns the directory holding the kernel (Image), busybox and the
-// modules, fetching and unpacking the archive on first use. RANGE_VM_ASSETS
-// names a local copy of the archive instead, which is still checked.
+const releaseURL = "https://github.com/andreygrehov/range/releases/download/vm-2/"
+
+// Kernel is the kernel in an assets directory.
+func Kernel(assets string) string { return filepath.Join(assets, "kernel") }
+
+// Assets returns the directory holding the kernel, busybox and the modules
+// for this machine's architecture, fetching and unpacking the archive on
+// first use. RANGE_VM_ASSETS names a local copy of the archive instead,
+// which is still checked.
 func Assets(ctx context.Context, cacheDir string) (string, error) {
-	dir := filepath.Join(cacheDir, "vm", AssetSHA256[:16])
-	if _, err := os.Stat(filepath.Join(dir, "Image")); err == nil {
+	archive, ok := archives[runtime.GOARCH]
+	if !ok {
+		return "", fmt.Errorf("Range has no Linux VM for %s", runtime.GOARCH)
+	}
+	dir := filepath.Join(cacheDir, "vm", archive.sha256[:16])
+	if _, err := os.Stat(Kernel(dir)); err == nil {
 		return dir, nil
 	}
 	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil {
 		return "", err
 	}
-	archive, err := os.CreateTemp(filepath.Dir(dir), ".partial-*")
+	file, err := os.CreateTemp(filepath.Dir(dir), ".partial-*")
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(archive.Name())
-	defer archive.Close()
+	defer os.Remove(file.Name())
+	defer file.Close()
 	if local := os.Getenv("RANGE_VM_ASSETS"); local != "" {
 		src, err := os.Open(local)
 		if err != nil {
 			return "", err
 		}
-		_, err = io.Copy(archive, src)
+		_, err = io.Copy(file, src)
 		src.Close()
 		if err != nil {
 			return "", err
 		}
 	} else {
-		fmt.Fprintf(os.Stderr, "range: downloading the Linux VM (%s, first run only)\n", AssetName)
-		if err := download(ctx, AssetURL, archive); err != nil {
+		fmt.Fprintf(os.Stderr, "range: downloading the Linux VM (%s, first run only)\n", archive.name)
+		if err := download(ctx, releaseURL+archive.name, file); err != nil {
 			return "", fmt.Errorf("download the Linux VM: %w", err)
 		}
 	}
-	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
 	sum := sha256.New()
-	if _, err := io.Copy(sum, archive); err != nil {
+	if _, err := io.Copy(sum, file); err != nil {
 		return "", err
 	}
-	if got := hex.EncodeToString(sum.Sum(nil)); got != AssetSHA256 {
-		return "", fmt.Errorf("the Linux VM archive has SHA-256 %s, want %s", got, AssetSHA256)
+	if got := hex.EncodeToString(sum.Sum(nil)); got != archive.sha256 {
+		return "", fmt.Errorf("the Linux VM archive has SHA-256 %s, want %s", got, archive.sha256)
 	}
-	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
 		return "", err
 	}
 	staging, err := os.MkdirTemp(filepath.Dir(dir), ".unpack-*")
@@ -82,12 +94,12 @@ func Assets(ctx context.Context, cacheDir string) (string, error) {
 		return "", err
 	}
 	defer os.RemoveAll(staging)
-	if err := unpack(archive, staging); err != nil {
+	if err := unpack(file, staging); err != nil {
 		return "", fmt.Errorf("unpack the Linux VM: %w", err)
 	}
 	if err := os.Rename(staging, dir); err != nil {
 		// Another session unpacked it first.
-		if _, statErr := os.Stat(filepath.Join(dir, "Image")); statErr == nil {
+		if _, statErr := os.Stat(Kernel(dir)); statErr == nil {
 			return dir, nil
 		}
 		return "", err

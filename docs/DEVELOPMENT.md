@@ -15,9 +15,10 @@ this tree. A released binary finds `range-linux-<arch>` beside itself instead. T
 uses cgo for Virtualization.framework, so it needs the Xcode command line tools. Range signs
 a copy of itself for the VM on first use, so `go build` and `go run` work as they are.
 
-The VM's kernel, modules and busybox come from one archive. `scripts/vm-assets.sh` builds
-it from pinned Debian and Alpine packages, reproducibly. Publish it as a release asset and
-put its SHA-256 in `internal/vm/assets.go`. `RANGE_VM_ASSETS` points at a local copy.
+The VM's kernel, modules and busybox come from one archive for each architecture.
+`scripts/vm-assets.sh arm64` (or `amd64`) builds it from pinned Debian and Alpine packages,
+reproducibly. Publish both as assets of one release and put their SHA-256 in
+`internal/vm/assets.go`. `RANGE_VM_ASSETS` points at a local copy.
 
 ## Layout
 
@@ -41,8 +42,10 @@ internal/
   virtual/            EROFS images whose file data lives elsewhere
   hub/                Hugging Face repositories as images
   image/              building an environment's filesystem image
-  session/            runtimes (Linux, Range's VM, Lima), sessions, namespaces
-  vm/                 the Mac's Linux VM: assets, initramfs, vsock, boot
+  session/            runtimes (native, Range's VM, Lima), sessions, namespaces
+  vm/                 Range's VM: assets, initramfs, vsock, the session's host side;
+                      Virtualization.framework on a Mac, QEMU with KVM on Linux
+  relay/              published ports, relayed into an environment
   publish/            multipart upload to S3
   tool/               the host programs Range runs
   bytesize/           parsing and printing sizes

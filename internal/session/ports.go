@@ -3,12 +3,12 @@ package session
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"os"
 	"strconv"
 	"strings"
-	"sync"
+
+	"github.com/andreygrehov/range/internal/relay"
 )
 
 // Port publishes a port of the environment on this machine, as docker run -p
@@ -94,40 +94,9 @@ func publishOnHost(sess *Session, ports []Port) error {
 // Publish listens on p's host address and relays each connection to what
 // dial returns, until stop is called.
 func Publish(p Port, dial func() (io.ReadWriteCloser, error)) (stop func() error, err error) {
-	listener, err := net.Listen("tcp", net.JoinHostPort(p.HostIP, strconv.Itoa(p.HostPort)))
+	stop, err = relay.Listen(net.JoinHostPort(p.HostIP, strconv.Itoa(p.HostPort)), dial)
 	if err != nil {
 		return nil, fmt.Errorf("publish port %d: %w", p.Port, err)
 	}
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go func() {
-				inside, err := dial()
-				if err != nil {
-					log.Printf("range: port %d: %v", p.Port, err)
-					conn.Close()
-					return
-				}
-				Relay(conn, inside)
-			}()
-		}
-	}()
-	return func() error { listener.Close(); <-done; return nil }, nil
-}
-
-// Relay copies between a and b, both ways, until either side is done, and
-// closes both.
-func Relay(a, b io.ReadWriteCloser) {
-	var once sync.Once
-	closeBoth := func() { a.Close(); b.Close() }
-	var wg sync.WaitGroup
-	wg.Add(2)
-	go func() { defer wg.Done(); io.Copy(a, b); once.Do(closeBoth) }()
-	go func() { defer wg.Done(); io.Copy(b, a); once.Do(closeBoth) }()
-	wg.Wait()
+	return stop, nil
 }

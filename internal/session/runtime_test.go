@@ -2,6 +2,7 @@ package session
 
 import (
 	"errors"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -12,8 +13,18 @@ func TestRuntimeSelectionMatchesHost(t *testing.T) {
 	host := Select()
 	switch runtime.GOOS {
 	case "linux":
-		if host.Name() != "native" {
-			t.Fatalf("runtime = %q, want native on Linux", host.Name())
+		// Natively as root; in a VM without root, where KVM and QEMU allow it.
+		_, vm := newKVM()
+		want := "native"
+		if os.Geteuid() != 0 && vm {
+			want = "kvm"
+		}
+		if host.Name() != want {
+			t.Fatalf("runtime = %q, want %q (root: %v, a VM possible: %v)", host.Name(), want, os.Geteuid() == 0, vm)
+		}
+		t.Setenv("RANGE_RUNTIME", "native")
+		if got := Select().Name(); got != "native" {
+			t.Fatalf("RANGE_RUNTIME=native chose %q", got)
 		}
 	case "darwin":
 		// macOS is supported through a Linux VM: Range's own where the Mac
@@ -78,5 +89,14 @@ func TestNBDRequirement(t *testing.T) {
 	}
 	if r := nbdRequirement(false, false); r.OK || r.Fixable {
 		t.Errorf("a kernel without nbd must block: %+v", r)
+	}
+}
+
+func TestVMMemoryIsWholeMiB(t *testing.T) {
+	for _, total := range []uint64{0, 1 << 30, 33_554_350_080, 68_719_476_736, 1 << 40} {
+		got := vmMemory(total)
+		if got%(1<<20) != 0 || got < 2<<30 || got > 8<<30 {
+			t.Errorf("vmMemory(%d) = %d", total, got)
+		}
 	}
 }

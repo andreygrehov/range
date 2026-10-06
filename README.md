@@ -158,8 +158,10 @@ measurements are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Requirements
 
-- Linux: root, a kernel with the `nbd`, `erofs` and `overlay` modules, which
-  Range loads itself, and `mount` and `unshare` from util-linux.
+- Linux, natively: root, a kernel with the `nbd`, `erofs` and `overlay`
+  modules, which Range loads itself, and `mount` and `unshare` from util-linux.
+- Linux without root: the `kvm` group and QEMU. Each session then runs in a VM
+  of its own, as on a Mac. `virtiofsd` shares directories.
 - macOS: Apple silicon and macOS 14 or later. On an Intel Mac, Lima.
 - Windows: the Linux build inside WSL2, untested.
 
@@ -170,8 +172,11 @@ measurements are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 - The first run of an image outside the catalog reads its layers whole to
   index them.
   Private registries and gated Hugging Face models are not supported yet.
-- An environment is not a security boundary. It runs as root in namespaces on
-  the host's network. Run untrusted code inside a VM.
+- Natively on Linux, an environment is not a security boundary. It runs as root
+  in namespaces on the host's network. In Range's VM, on a Mac or on Linux
+  without root, it runs under a kernel of its own, behind hardware
+  virtualization. It still reaches the network, services on this machine
+  among them, and writes to any directory you share with it.
 - One architecture per artifact, as with container images.
 - Artifacts are immutable. A changed object is a new artifact, and a session
   that sees its object change fails instead of mixing the two.

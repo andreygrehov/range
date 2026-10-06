@@ -154,8 +154,11 @@ read-only with `nodev,nosuid` on `<dir>` until Ctrl-C. Any process on the host
 reads the files from there. `--readahead` (default `16MiB`) sets the device's
 readahead, so programs that map files, like model loaders, read in large pieces.
 
-The environment is an isolation boundary, not a security boundary. It has none
-of these controls:
+Natively on Linux, the environment is an isolation boundary, not a security
+boundary. In Range's VM, on a Mac or on Linux without root, the workload runs
+under a kernel of its own, behind hardware virtualization, but it still reaches
+the network and any directory you share. The native environment has none of
+these controls:
 
 - a user namespace
 - a network namespace
@@ -276,7 +279,7 @@ Other environment variables:
 | Variable | Purpose |
 | --- | --- |
 | `RANGE_S3_ENDPOINT` | S3-compatible endpoint (R2, MinIO). Setting it enables path-style URLs |
-| `RANGE_RUNTIME` | `lima` runs environments in a Lima VM on a Mac that can boot Range's own VM |
+| `RANGE_RUNTIME` | On Linux, `native` or `kvm`: in namespaces here, or in a VM of its own. On a Mac, `lima` uses a Lima VM instead of Range's own |
 | `RANGE_VM_ASSETS` | A local copy of the VM archive (`scripts/vm-assets.sh` builds it), checked like a download |
 | `RANGE_LIMA_INSTANCE` | Lima VM to use on macOS (default `range-linux`) |
 

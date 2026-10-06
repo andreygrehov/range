@@ -14,9 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"unsafe"
 
-	"github.com/andreygrehov/range/internal/core"
 	"github.com/andreygrehov/range/internal/image"
 	"github.com/andreygrehov/range/internal/vm"
 )
@@ -86,39 +84,11 @@ func (vzRuntime) Run(ctx context.Context, opts Options, onReady func()) error {
 		return err
 	}
 
-	disks := []string{}
-	for _, r := range append([]*core.Reader{opts.Reader}, mountReaders(opts.Mounts)...) {
-		port, err := serveNBD(opts.Session, r)
-		if err != nil {
-			return err
-		}
-		disks = append(disks, fmt.Sprintf("nbd://127.0.0.1:%d", port))
+	disks, err := serveDisks(opts)
+	if err != nil {
+		return err
 	}
-	terminal := isTerminal(os.Stdin) && isTerminal(os.Stdout)
-	cfg := vm.HostConfig{
-		Kernel: filepath.Join(assets, "Image"), Initrd: initrd,
-		CPUs: uint(min(runtime.NumCPU(), 8)), Memory: vmMemory(), Disks: disks,
-		Console: filepath.Join(cacheDir, "vm", "console.log"),
-		Guest: vm.GuestConfig{
-			SessionID: opts.Session.ID, Workload: opts.Workload, Workdir: opts.Workdir,
-			ShellPath: opts.ShellPath, Command: opts.Command, DefaultCommand: opts.DefaultCommand,
-			Terminal: terminal, Term: os.Getenv("TERM"),
-		},
-	}
-	for _, m := range opts.Mounts {
-		cfg.Guest.Mounts = append(cfg.Guest.Mounts, m.Target)
-	}
-	for i, d := range opts.Dirs {
-		cfg.Guest.Shares = append(cfg.Guest.Shares, vm.Share{Tag: vm.ShareTag(i), Path: d.Path, Target: d.Target})
-	}
-	cfg.Guest.Env = opts.Env
-	for _, p := range opts.Ports {
-		cfg.Guest.Ports = append(cfg.Guest.Ports, p.Port)
-		cfg.Publish = append(cfg.Publish, vm.Publish{HostIP: p.HostIP, HostPort: p.HostPort})
-	}
-	if terminal {
-		cfg.Guest.Rows, cfg.Guest.Cols = windowSize(int(os.Stdout.Fd()))
-	}
+	cfg := vmHostConfig(opts, assets, initrd, disks, vmMemory(macMemory()))
 
 	configRead, configWrite, err := os.Pipe()
 	if err != nil {
@@ -154,32 +124,16 @@ func (vzRuntime) Run(ctx context.Context, opts Options, onReady func()) error {
 	return exitStatusOf(cmd.Wait())
 }
 
-func mountReaders(mounts []Mount) []*core.Reader {
-	readers := make([]*core.Reader, len(mounts))
-	for i, m := range mounts {
-		readers[i] = m.Reader
-	}
-	return readers
-}
-
-// vmMemory gives the VM a quarter of this Mac's memory, between 2 and 8 GiB.
-// The VM takes pages only as the guest touches them.
-func vmMemory() uint64 {
+// macMemory is this Mac's memory, or 0 if it cannot be read.
+func macMemory() uint64 {
 	raw, err := syscall.Sysctl("hw.memsize")
 	if err != nil || len(raw) > 8 {
-		return 4 << 30
+		return 0
 	}
 	// Sysctl hands back the raw value, with a trailing zero byte cut off.
 	var b [8]byte
 	copy(b[:], raw)
-	total := binary.LittleEndian.Uint64(b[:])
-	return min(max(total/4, 2<<30), 8<<30)
-}
-
-func windowSize(fd int) (rows, cols uint16) {
-	var size [4]uint16
-	syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&size)))
-	return size[0], size[1]
+	return binary.LittleEndian.Uint64(b[:])
 }
 
 // entitlements lets a binary use Virtualization.framework. An ad-hoc

@@ -24,6 +24,8 @@ func commandDoctor(args []string) error {
 		fmt.Printf("Execution   native namespaces on this kernel\n")
 	case "vz":
 		fmt.Printf("Execution   a Linux VM per session (Virtualization.framework), artifact served over NBD\n")
+	case "kvm":
+		fmt.Printf("Execution   a Linux VM per session (QEMU with KVM), artifact served over NBD\n")
 	default:
 		fmt.Printf("Execution   Linux VM, artifact served from this host over NBD\n")
 	}

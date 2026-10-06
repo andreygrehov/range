@@ -2,6 +2,7 @@ package vm
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"syscall"
 	"time"
@@ -39,12 +40,15 @@ func DialHost(port uint32, timeout time.Duration) (*os.File, error) {
 	}
 }
 
-func dialHost(port uint32) (*os.File, error) {
+func dialHost(port uint32) (*os.File, error) { return dial(hostCID, port) }
+
+// dial connects to a vsock port of a VM, or of the host from a guest.
+func dial(cid, port uint32) (*os.File, error) {
 	fd, err := syscall.Socket(afVSOCK, syscall.SOCK_STREAM|syscall.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return nil, fmt.Errorf("vsock socket: %w", err)
 	}
-	addr := sockaddrVM{family: afVSOCK, port: port, cid: hostCID}
+	addr := sockaddrVM{family: afVSOCK, port: port, cid: cid}
 	_, _, errno := syscall.Syscall(syscall.SYS_CONNECT, uintptr(fd),
 		uintptr(unsafe.Pointer(&addr)), unsafe.Sizeof(addr))
 	if errno != 0 {
@@ -79,18 +83,69 @@ func ListenHost(port uint32) (*Listener, error) {
 // Accept waits for the next connection. syscall.Accept cannot be used: it
 // refuses a peer address of a family it does not know, vsock among them.
 func (l *Listener) Accept() (*os.File, error) {
-	nfd, _, errno := syscall.Syscall6(syscall.SYS_ACCEPT4, uintptr(l.fd), 0, 0, syscall.SOCK_CLOEXEC, 0, 0)
-	if errno != 0 {
-		return nil, errno
-	}
-	return os.NewFile(nfd, "vsock"), nil
+	f, _, err := l.acceptFrom()
+	return f, err
 }
 
-// Close stops listening.
-func (l *Listener) Close() error { return syscall.Close(l.fd) }
+// acceptFrom waits for the next connection and says which VM made it.
+func (l *Listener) acceptFrom() (*os.File, uint32, error) {
+	var peer sockaddrVM
+	size := uint32(unsafe.Sizeof(peer))
+	nfd, _, errno := syscall.Syscall6(syscall.SYS_ACCEPT4, uintptr(l.fd),
+		uintptr(unsafe.Pointer(&peer)), uintptr(unsafe.Pointer(&size)), syscall.SOCK_CLOEXEC, 0, 0)
+	if errno != 0 {
+		return nil, 0, errno
+	}
+	return os.NewFile(nfd, "vsock"), peer.cid, nil
+}
+
+// Close stops listening. Closing alone would not wake an Accept blocked on
+// another thread; shutting the socket down does.
+func (l *Listener) Close() error {
+	syscall.Shutdown(l.fd, syscall.SHUT_RDWR)
+	return syscall.Close(l.fd)
+}
 
 // CloseWrite ends the sending half of a vsock connection, so the host reads
 // EOF while the guest can still read.
 func CloseWrite(f *os.File) error {
 	return syscall.Shutdown(int(f.Fd()), syscall.SHUT_WR)
 }
+
+// vmListener is a host's vsock listener that takes connections from one VM
+// only: on Linux, every VM on the host can reach the host's vsock ports.
+type vmListener struct {
+	l   *Listener
+	cid uint32
+}
+
+func (v vmListener) Accept() (net.Conn, error) {
+	for {
+		f, peer, err := v.l.acceptFrom()
+		if err != nil {
+			return nil, err
+		}
+		if peer == v.cid {
+			return vsockConn{f}, nil
+		}
+		f.Close()
+	}
+}
+
+func (v vmListener) Close() error   { return v.l.Close() }
+func (v vmListener) Addr() net.Addr { return vsockAddr{} }
+
+// vsockConn is a vsock connection as a net.Conn. Deadlines are not
+// supported: the session's own timeouts bound it.
+type vsockConn struct{ *os.File }
+
+func (vsockConn) LocalAddr() net.Addr                { return vsockAddr{} }
+func (vsockConn) RemoteAddr() net.Addr               { return vsockAddr{} }
+func (vsockConn) SetDeadline(t time.Time) error      { return nil }
+func (vsockConn) SetReadDeadline(t time.Time) error  { return nil }
+func (vsockConn) SetWriteDeadline(t time.Time) error { return nil }
+
+type vsockAddr struct{}
+
+func (vsockAddr) Network() string { return "vsock" }
+func (vsockAddr) String() string  { return "vsock" }

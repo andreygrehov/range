@@ -12,21 +12,8 @@ import (
 	"github.com/Code-Hex/vz/v3"
 )
 
-// Spec is the VM to boot.
-type Spec struct {
-	Kernel, Initrd string
-	CPUs           uint
-	Memory         uint64
-	// Disks are nbd:// URLs, attached read-only in order as vda, vdb, ...
-	Disks []string
-	// Console receives the kernel's and init's output; nil discards it.
-	Console *os.File
-	// Shares are directories of the Mac the guest mounts with virtiofs.
-	Shares []Share
-}
-
-// Machine is a running VM.
-type Machine struct {
+// VZ is a VM run by Apple's Virtualization.framework.
+type VZ struct {
 	vm      *vz.VirtualMachine
 	sockets *vz.VirtioSocketDevice
 	stopped chan struct{}
@@ -37,9 +24,9 @@ type Machine struct {
 	keep []any
 }
 
-// Start boots a VM from spec.
-func Start(spec Spec) (*Machine, error) {
-	m := &Machine{stopped: make(chan struct{})}
+// StartVZ boots a VM from spec.
+func StartVZ(spec Spec) (*VZ, error) {
+	m := &VZ{stopped: make(chan struct{})}
 	boot, err := vz.NewLinuxBootLoader(spec.Kernel,
 		vz.WithCommandLine("console=hvc0 quiet loglevel=3 rdinit=/init"),
 		vz.WithInitrd(spec.Initrd))
@@ -52,11 +39,13 @@ func Start(spec Spec) (*Machine, error) {
 	}
 	m.keep = append(m.keep, boot, config)
 
-	console := spec.Console
-	if console == nil {
-		if console, err = os.OpenFile(os.DevNull, os.O_WRONLY, 0); err != nil {
-			return nil, err
-		}
+	consolePath := spec.Console
+	if consolePath == "" {
+		consolePath = os.DevNull
+	}
+	console, err := os.Create(consolePath)
+	if err != nil {
+		return nil, err
 	}
 	input, err := os.Open(os.DevNull)
 	if err != nil {
@@ -164,20 +153,28 @@ func Start(spec Spec) (*Machine, error) {
 }
 
 // Listen accepts the guest's connections to a vsock port.
-func (m *Machine) Listen(port uint32) (net.Listener, error) {
-	return m.sockets.Listen(port)
+func (m *VZ) Listen(port uint32) (net.Listener, error) {
+	l, err := m.sockets.Listen(port)
+	if err != nil {
+		return nil, err // a nil *VirtioSocketListener is not a nil net.Listener
+	}
+	return l, nil
 }
 
 // Connect opens a connection to the guest on a vsock port.
-func (m *Machine) Connect(port uint32) (net.Conn, error) {
-	return m.sockets.Connect(port)
+func (m *VZ) Connect(port uint32) (net.Conn, error) {
+	c, err := m.sockets.Connect(port)
+	if err != nil {
+		return nil, err
+	}
+	return c, nil
 }
 
 // Stopped is closed once the VM has stopped.
-func (m *Machine) Stopped() <-chan struct{} { return m.stopped }
+func (m *VZ) Stopped() <-chan struct{} { return m.stopped }
 
 // Stop ends the VM at once and waits for it.
-func (m *Machine) Stop() {
+func (m *VZ) Stop() {
 	select {
 	case <-m.stopped:
 		return
@@ -193,6 +190,6 @@ func (m *Machine) Stop() {
 }
 
 // Close releases the VM. Call it after the VM has stopped.
-func (m *Machine) Close() {
+func (m *VZ) Close() {
 	m.keep = nil
 }

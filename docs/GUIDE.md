@@ -77,7 +77,8 @@ inside the environment.
 
 | Host | How it runs | Status |
 | --- | --- | --- |
-| Linux | Native: nbd, EROFS, overlay, namespaces on this kernel | Verified end to end |
+| Linux, as root | Native: nbd, EROFS, overlay, namespaces on this kernel | Verified end to end |
+| Linux, without root | A VM for each session, with QEMU and KVM: the kvm group and QEMU, no root. The environment is the VM's disk, served over NBD | Verified end to end on arm64 |
 | macOS, Apple silicon | Range Core stays on the Mac. Range boots a Linux VM for each session with Virtualization.framework. The environment is the VM's disk, served from the Mac over NBD. Nothing to install | Verified end to end |
 | macOS, Intel | Range Core stays on the Mac. A Lima VM runs the environment, reached over NBD through an ssh reverse tunnel. Range creates the VM and installs a Linux build of itself on first use | Verified end to end |
 | Windows | Run the Linux build inside WSL2 | Documented, not executed |
@@ -357,7 +358,7 @@ Flags override environment variables.
 | `RANGE_PROFILE` | `--profile` | `auto` | Working-set profile handling: `off`, `record` or `auto` |
 | `RANGE_PREFETCH_LIMIT` | `--prefetch-limit` | `256MiB` | Ceiling on bytes pulled from a profile |
 | `RANGE_S3_ENDPOINT` | none | none | S3-compatible endpoint (R2, MinIO). Enables path-style URLs |
-| `RANGE_RUNTIME` | none | none | `lima` runs environments in a Lima VM on any Mac |
+| `RANGE_RUNTIME` | none | none | Linux: `native` or `kvm`. Mac: `lima` for a Lima VM |
 | `RANGE_VM_ASSETS` | none | none | A local copy of the VM archive, checked like a download |
 | `RANGE_LIMA_INSTANCE` | none | `range-linux` | Lima VM to use on macOS |
 
@@ -425,7 +426,9 @@ Also not built:
 - a Go library (see [Serving over HTTP](#serving-over-http))
 - extended attributes in the EROFS writer
 
-**The environment is not a security boundary.** It has:
+**Natively, the environment is not a security boundary.** In Range's VM, on a Mac or on Linux
+without root, the workload runs under a kernel of its own. It still reaches the network and any
+directory you share. The native environment has:
 
 - no user namespace
 - no network namespace

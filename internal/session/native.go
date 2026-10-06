@@ -27,7 +27,8 @@ func (Native) BuildImage(_ context.Context, req image.BuildRequest) error {
 // Requirements lists what this host needs: root, the nbd, erofs and overlay
 // modules, and the util-linux tools.
 func (Native) Requirements() []Requirement {
-	reqs := []Requirement{{What: "root", OK: os.Geteuid() == 0, Detail: "re-run with sudo", From: "you"}}
+	reqs := []Requirement{{What: "root", OK: os.Geteuid() == 0, From: "you",
+		Detail: "re-run with sudo, or run in a VM without root: join the kvm group and install QEMU"}}
 	tools := true
 	for _, tool := range []string{"mount", "umount", "unshare"} {
 		if _, err := exec.LookPath(tool); err != nil {

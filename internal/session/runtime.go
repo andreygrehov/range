@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -54,6 +55,8 @@ func NotNeeded(host Runtime) string {
 	switch host.Name() {
 	case "native":
 		return "a daemon, a registry, a container runtime, a snapshotter, FUSE"
+	case "kvm":
+		return "root, a daemon, a registry, a container runtime, a snapshotter, FUSE"
 	case "vz":
 		return "a daemon, a registry, a container runtime, a snapshotter, FUSE, Lima"
 	}
@@ -116,6 +119,14 @@ func exitStatusOf(err error) error {
 func Select() Runtime {
 	switch runtime.GOOS {
 	case "linux":
+		// Natively as root: nothing is faster. Without root, in a VM, where
+		// KVM and QEMU allow one. RANGE_RUNTIME=native or kvm chooses.
+		mode := os.Getenv("RANGE_RUNTIME")
+		if mode != "native" && (mode == "kvm" || os.Geteuid() != 0) {
+			if kvm, ok := newKVM(); ok {
+				return kvm
+			}
+		}
 		return Native{}
 	case "darwin":
 		// Range's own VM where this Mac and this build can boot one; Lima
