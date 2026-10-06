@@ -295,7 +295,7 @@ func signalReady() {
 // Two inherited pipes carry a handshake: the child reports readiness on fd 3
 // once it is about to exec the workload, and waits on fd 4 until the parent has
 // printed its banner. Without the second half the banner races the shell prompt.
-func runInNamespaces(ctx context.Context, sessionDir string, onReady func()) error {
+func runInNamespaces(ctx context.Context, sessionDir string, controllingTerminal bool, onReady func()) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -317,6 +317,9 @@ func runInNamespaces(ctx context.Context, sessionDir string, onReady func()) err
 		self, ChildCommand, sessionDir)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.ExtraFiles = []*os.File{readyWrite, goRead}
+	if controllingTerminal {
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
+	}
 	if err := cmd.Start(); err != nil {
 		readyWrite.Close()
 		goRead.Close()
@@ -334,5 +337,5 @@ func runInNamespaces(ctx context.Context, sessionDir string, onReady func()) err
 		onReady()
 		goWrite.Write([]byte{'G'})
 	}()
-	return cmd.Wait()
+	return exitStatusOf(cmd.Wait())
 }

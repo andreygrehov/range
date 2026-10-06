@@ -19,9 +19,11 @@ func commandDoctor(args []string) error {
 	host := session.Select()
 	fmt.Printf("Host        %s/%s\n", runtime.GOOS, runtime.GOARCH)
 	fmt.Printf("Runtime     %s\n", host.Name())
-	switch host.(type) {
-	case session.Native:
+	switch host.Name() {
+	case "native":
 		fmt.Printf("Execution   native namespaces on this kernel\n")
+	case "vz":
+		fmt.Printf("Execution   a Linux VM per session (Virtualization.framework), artifact served over NBD\n")
 	default:
 		fmt.Printf("Execution   Linux VM, artifact served from this host over NBD\n")
 	}

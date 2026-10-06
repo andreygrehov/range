@@ -3,12 +3,14 @@ module github.com/andreygrehov/range
 go 1.25.0
 
 require (
+	github.com/Code-Hex/vz/v3 v3.8.0
 	github.com/aws/aws-sdk-go-v2/config v1.33.5
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.113.1
 	github.com/klauspost/compress v1.20.0
 )
 
 require (
+	github.com/Code-Hex/go-infinity-channel v1.0.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.47.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.20 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.5 // indirect
@@ -25,4 +27,5 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.0 // indirect
 	github.com/aws/smithy-go v1.28.1 // indirect
+	golang.org/x/mod v0.22.0 // indirect
 )

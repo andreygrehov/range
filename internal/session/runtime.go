@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"runtime"
 	"strings"
+	"syscall"
 
 	"github.com/andreygrehov/range/internal/core"
 	"github.com/andreygrehov/range/internal/image"
@@ -45,11 +47,15 @@ type Requirement struct {
 }
 
 // NotNeeded is what every lazy-loading alternative asks you to install and
-// run, and Range does not. On macOS the Linux VM is itself long-lived, so
-// "no daemon" is only claimed where it is true.
+// run, and Range does not. Lima's VM is long-lived, so "no daemon" is only
+// claimed where it is true: natively, and in Range's own VM, which lives as
+// long as its session.
 func NotNeeded(host Runtime) string {
-	if _, native := host.(Native); native {
+	switch host.Name() {
+	case "native":
 		return "a daemon, a registry, a container runtime, a snapshotter, FUSE"
+	case "vz":
+		return "a daemon, a registry, a container runtime, a snapshotter, FUSE, Lima"
 	}
 	return "a registry, a container runtime, a snapshotter, FUSE\n" +
 		"  (the Linux VM is the one long-running piece on this host)"
@@ -73,6 +79,31 @@ type Options struct {
 	// DefaultCommand runs the environment's own command when Command is
 	// empty, instead of a shell.
 	DefaultCommand bool
+	// ControllingTerminal starts the workload in a session of its own with
+	// standard input as its controlling terminal. Range's VM on a Mac needs
+	// it: there, Range is the first process, and no login gave it a terminal.
+	ControllingTerminal bool
+}
+
+// ExitStatus is a workload's non-zero exit status. range exits with it, so a
+// script running "range run" sees the status of its command.
+type ExitStatus int
+
+func (e ExitStatus) Error() string { return fmt.Sprintf("exit status %d", int(e)) }
+
+// exitStatusOf turns the error a workload's process ended with into an
+// ExitStatus, if it is one.
+func exitStatusOf(err error) error {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		if code := exit.ExitCode(); code > 0 {
+			return ExitStatus(code)
+		}
+		if status, ok := exit.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+			return ExitStatus(128 + int(status.Signal()))
+		}
+	}
+	return err
 }
 
 // Select returns the runtime for this host.
@@ -81,6 +112,11 @@ func Select() Runtime {
 	case "linux":
 		return Native{}
 	case "darwin":
+		// Range's own VM where this Mac and this build can boot one; Lima
+		// otherwise, or when RANGE_RUNTIME=lima asks for it.
+		if vz, ok := newVZ(); ok {
+			return vz
+		}
 		return lima{instance: limaInstance}
 	default:
 		// Windows runs the Linux build inside WSL2 rather than as a native

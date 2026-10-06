@@ -51,10 +51,13 @@ curl -fsSL https://github.com/andreygrehov/range/releases/latest/download/range_
 ./range doctor
 ```
 
-On macOS, environments run in a small Linux VM managed by [Lima](https://lima-vm.io)
-(`brew install lima`). Range creates the VM on first use and installs nothing in
-it but a Linux build of itself, which ships in the archive as
-`range-linux-<arch>`. Keep it next to `range`.
+On a Mac with Apple silicon and macOS 14 or later, Range boots a small Linux VM
+for each session with Apple's Virtualization.framework. The VM starts in a
+fraction of a second and stops with the session. There is nothing to install:
+the first run downloads the VM's kernel once (13 MB). The VM runs a Linux build
+of Range, which ships in the archive as `range-linux-<arch>`. Keep it next to
+`range`. An Intel Mac runs environments in a [Lima](https://lima-vm.io) VM
+(`brew install lima`).
 
 From source, with Go 1.25 or newer:
 
@@ -145,7 +148,7 @@ measurements are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 - Linux: root, the `nbd`, `erofs` and `overlay` kernel modules, and `mount` and
   `unshare` from util-linux.
-- macOS: Lima.
+- macOS: Apple silicon and macOS 14 or later. On an Intel Mac, Lima.
 - Windows: the Linux build inside WSL2, untested.
 
 `range doctor` checks all of it and says what is missing.

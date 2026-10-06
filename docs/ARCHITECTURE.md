@@ -99,11 +99,10 @@ Linux                          macOS
 range (host)                   range (host)
   Range Core                     Range Core, credentials, cache, profiles
   nbd attach  ------+              |
-  EROFS             |              | NBD over an ssh reverse tunnel
+  EROFS             |              | NBD, as the VM's disk (Virtualization.framework)
   overlay           |              v
-  namespaces        |            Linux VM (Lima)
-  workload  <-------+              range: NBD client in Go -> NBD_SET_SOCK
-                                   EROFS -> overlay -> namespaces
+  namespaces        |            Linux VM, one per session
+  workload  <-------+              /dev/vda -> EROFS -> overlay -> namespaces
                                    workload
 ```
 
@@ -111,8 +110,12 @@ There is one cache implementation, one profile store and one credential path on
 every platform. The VM is a disposable execution substrate, not a place where
 state lives.
 
-On macOS, range itself creates and maintains the VM on first use. Range installs
-nothing in the VM except range. The guest negotiates NBD itself: it runs the
+On Apple silicon, range boots the VM itself for each session, with
+Virtualization.framework, from a kernel and an initramfs. Apple's NBD client
+attaches the environment as `/dev/vda`, so the guest needs no NBD code at all.
+The guest talks to the host over vsock: a control stream (the session, readiness,
+the window size, the exit status) and one stream for each standard stream. On
+an Intel Mac, range uses a Lima VM instead and installs nothing in it except range. The guest negotiates NBD itself: it runs the
 client half of the fixed-newstyle handshake with `NBD_OPT_GO`. It then passes
 the socket to the kernel with the same `NBD_SET_SOCK` that the native path uses.
 The guest therefore needs no `nbd-client`.
@@ -131,6 +134,10 @@ that `range doctor` prints:
 - root
 - the `nbd`, `erofs` and `overlay` kernel modules
 - `mount`/`unshare` from util-linux
+
+On a Mac with Apple silicon, the list is macOS 14 or later. Range downloads the
+VM's kernel and initramfs itself. The Mac build uses cgo for
+Virtualization.framework.
 
 Windows runs the Linux build inside WSL2. A native Windows binary is not built,
 because the namespace and nbd code has no Windows analogue.

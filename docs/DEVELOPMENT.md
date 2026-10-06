@@ -11,7 +11,13 @@ GOOS=linux GOARCH=arm64 go build -o bin/range-linux-arm64 ./cmd/range
 ```
 
 On macOS, when Go is installed, `range` cross-compiles its own Linux build for the VM from
-this tree. A released binary finds `range-linux-<arch>` beside itself instead.
+this tree. A released binary finds `range-linux-<arch>` beside itself instead. The Mac build
+uses cgo for Virtualization.framework, so it needs the Xcode command line tools. Range signs
+a copy of itself for the VM on first use, so `go build` and `go run` work as they are.
+
+The VM's kernel, modules and busybox come from one archive. `scripts/vm-assets.sh` builds
+it from pinned Debian and Alpine packages, reproducibly. Publish it as a release asset and
+put its SHA-256 in `internal/vm/assets.go`. `RANGE_VM_ASSETS` points at a local copy.
 
 ## Layout
 
@@ -35,7 +41,8 @@ internal/
   virtual/            EROFS images whose file data lives elsewhere
   hub/                Hugging Face repositories as images
   image/              building an environment's filesystem image
-  session/            runtimes (Linux, Lima), sessions, namespaces, the guest
+  session/            runtimes (Linux, Range's VM, Lima), sessions, namespaces
+  vm/                 the Mac's Linux VM: assets, initramfs, vsock, boot
   publish/            multipart upload to S3
   tool/               the host programs Range runs
   bytesize/           parsing and printing sizes

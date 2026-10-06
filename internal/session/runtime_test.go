@@ -1,6 +1,8 @@
 package session
 
 import (
+	"errors"
+	"os/exec"
 	"runtime"
 	"strings"
 	"testing"
@@ -14,13 +16,18 @@ func TestRuntimeSelectionMatchesHost(t *testing.T) {
 			t.Fatalf("runtime = %q, want native on Linux", host.Name())
 		}
 	case "darwin":
-		// macOS is supported through a Linux VM, so the shell must not refuse
-		// outright; missing pieces are provisioned rather than fatal.
-		if host.Name() != "lima" {
-			t.Fatalf("runtime = %q, want lima on macOS", host.Name())
+		// macOS is supported through a Linux VM: Range's own where the Mac
+		// can boot one, Lima otherwise. The shell must not refuse outright;
+		// missing pieces are provisioned rather than fatal.
+		if _, own := newVZ(); own && host.Name() != "vz" || !own && host.Name() != "lima" {
+			t.Fatalf("runtime = %q, own VM available: %v", host.Name(), own)
 		}
 		for _, req := range host.Requirements() {
-			if !req.OK && !req.Fixable && req.What != "limactl" && req.What != "guest binary" {
+			switch req.What {
+			case "limactl", "guest binary", "codesign", "macOS 14+":
+				continue
+			}
+			if !req.OK && !req.Fixable {
 				t.Fatalf("unexpected fatal Requirement on macOS: %+v", req)
 			}
 		}
@@ -39,5 +46,25 @@ func TestUnsupportedHostExplainsWSL(t *testing.T) {
 	}
 	if hint == "" {
 		t.Fatal("unsupported hosts must get an explanation")
+	}
+}
+
+// A workload's exit status, or the signal that ended it, becomes range's own.
+func TestExitStatusOf(t *testing.T) {
+	err := exitStatusOf(exec.Command("sh", "-c", "exit 7").Run())
+	var status ExitStatus
+	if !errors.As(err, &status) || status != 7 {
+		t.Fatalf("exit 7 = %v", err)
+	}
+	err = exitStatusOf(exec.Command("sh", "-c", "kill -TERM $$").Run())
+	if !errors.As(err, &status) || status != 128+15 {
+		t.Fatalf("killed by SIGTERM = %v", err)
+	}
+	if err := exitStatusOf(exec.Command("true").Run()); err != nil {
+		t.Fatalf("success = %v", err)
+	}
+	other := errors.New("not a process")
+	if exitStatusOf(other) != other {
+		t.Fatal("an unrelated error was changed")
 	}
 }

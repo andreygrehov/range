@@ -104,5 +104,5 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 		return err
 	}
 	sess.State = StateRunning
-	return runInNamespaces(ctx, sess.dir, onReady)
+	return runInNamespaces(ctx, sess.dir, opts.ControllingTerminal, onReady)
 }

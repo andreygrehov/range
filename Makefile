@@ -57,7 +57,8 @@ uninstall:
 	rm -f $(BINDIR)/range $(BINDIR)/range-linux-amd64 $(BINDIR)/range-linux-arm64
 
 # Archives are named after `uname -s` and `uname -m`, so a one-line install
-# can pick the right one without a lookup table:
+# can pick the right one without a lookup table. The Apple silicon build uses
+# cgo, for Virtualization.framework, so it is built on a Mac:
 #
 #   range_Darwin_arm64.tar.gz   range_Darwin_x86_64.tar.gz
 #   range_Linux_aarch64.tar.gz  range_Linux_x86_64.tar.gz
@@ -70,7 +71,8 @@ dist:
 		name=range_$$(echo $$target | cut -d/ -f3)_$$(echo $$target | cut -d/ -f4); \
 		dir=dist/$$name; mkdir -p $$dir; \
 		echo "building $$name"; \
-		GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 $(GO) build -trimpath -o $$dir/range $(PKG); \
+		cgo=0; [ $$os/$$arch = darwin/arm64 ] && cgo=1; \
+		GOOS=$$os GOARCH=$$arch CGO_ENABLED=$$cgo $(GO) build -trimpath -o $$dir/range $(PKG); \
 		if [ $$os = darwin ]; then \
 			GOOS=linux GOARCH=$$arch CGO_ENABLED=0 $(GO) build -trimpath -o $$dir/range-linux-$$arch $(PKG); \
 		fi; \

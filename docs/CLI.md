@@ -261,19 +261,30 @@ Other environment variables:
 | Variable | Purpose |
 | --- | --- |
 | `RANGE_S3_ENDPOINT` | S3-compatible endpoint (R2, MinIO). Setting it enables path-style URLs |
+| `RANGE_RUNTIME` | `lima` runs environments in a Lima VM on a Mac that can boot Range's own VM |
+| `RANGE_VM_ASSETS` | A local copy of the VM archive (`scripts/vm-assets.sh` builds it), checked like a download |
 | `RANGE_LIMA_INSTANCE` | Lima VM to use on macOS (default `range-linux`) |
 
 ## macOS
 
-`range shell` and `range build` work on macOS. On first use, range creates a
-small Lima VM and installs a Linux build of itself inside the VM. Range installs
-nothing else in the VM, because the NBD client is built into range. Range Core,
-your credentials, the byte cache and the profiles all stay on the Mac. Only the
-kernel work happens in the VM, which range reaches over the NBD protocol through
-an ssh tunnel.
+`range shell` and `range run` work on macOS. On Apple silicon with macOS 14 or
+later, range boots a Linux VM for each session with Virtualization.framework and
+stops it when the session ends. The VM boots from a kernel and an initramfs,
+with no disk image of its own. The environment is a disk that range serves from
+the Mac over NBD. Range Core, your credentials, the byte cache and the profiles
+all stay on the Mac.
 
-On macOS, range requires `limactl` (`brew install lima`) and a Linux build of
-range. Range takes the Linux build from one of these sources:
+The first run downloads the VM archive once (13 MB) and checks it against the
+SHA-256 in the source. Range signs a copy of itself for Virtualization.framework
+with an ad-hoc signature, once for each build. No developer account is needed.
+A tag is resolved once, then from a local cache. Range checks the tag again in
+the background, and the next session uses a tag that has moved.
+
+On an Intel Mac, or with `RANGE_RUNTIME=lima`, range runs environments in a Lima
+VM (`brew install lima`). It creates the VM on first use and reaches it over NBD
+through an ssh tunnel. `range build` runs in the Lima VM.
+
+Both need a Linux build of range. Range takes it from one of these sources:
 
 - `RANGE_GUEST_BINARY`
 - a `range-linux-<arch>` beside the binary

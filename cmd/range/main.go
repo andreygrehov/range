@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -62,6 +63,11 @@ func main() {
 	log.SetFlags(0)
 	log.SetPrefix("")
 	if err := run(os.Args[1:]); err != nil {
+		// A workload's own exit status is passed on, not reported as an error.
+		var status session.ExitStatus
+		if errors.As(err, &status) {
+			os.Exit(int(status))
+		}
 		log.Fatalf("range: %v", err)
 	}
 }
@@ -111,6 +117,10 @@ func run(args []string) error {
 		return session.RunChild(args[1:])
 	case session.GuestCommand:
 		return commandGuest(args[1:])
+	case session.VMGuestCommand:
+		return commandVMGuest(args[1:])
+	case session.VMHostCommand:
+		return commandVMHost(args[1:])
 
 	case "help", "-h", "--help":
 		fmt.Print(usage)

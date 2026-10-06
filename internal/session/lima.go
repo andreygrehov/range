@@ -115,6 +115,30 @@ func guestBinarySource() (string, error) {
 		"or run from the source tree with Go installed", runtime.GOARCH)
 }
 
+// guestBinaryAvailable reports whether guestBinarySource will find a guest
+// binary, without building one: a requirements check must stay cheap.
+func guestBinaryAvailable() error {
+	if path := os.Getenv("RANGE_GUEST_BINARY"); path != "" {
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("RANGE_GUEST_BINARY=%s does not exist", path)
+		}
+		return nil
+	}
+	if moduleDir() != "" {
+		if _, err := exec.LookPath("go"); err == nil {
+			return nil
+		}
+	}
+	if self, err := os.Executable(); err == nil {
+		if _, err := os.Stat(filepath.Join(filepath.Dir(self), "range-linux-"+runtime.GOARCH)); err == nil {
+			return nil
+		}
+	}
+	return fmt.Errorf("no Linux build of range available; set RANGE_GUEST_BINARY, "+
+		"or place range-linux-%s next to this binary, "+
+		"or run from the source tree with Go installed", runtime.GOARCH)
+}
+
 // guestBuildPath is where the cross-compiled guest binary is kept. It is
 // deliberately not os.TempDir(): a binary executed from there would then find
 // its own build output sitting next to it and treat it as a shipped sibling.
@@ -315,7 +339,7 @@ func (l lima) Run(ctx context.Context, opts Options, onReady func()) error {
 	args = append(args, limaSSHHost(l.instance), strings.Join(quoted, " "))
 	cmd := exec.CommandContext(ctx, "ssh", args...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	return cmd.Run()
+	return exitStatusOf(cmd.Run())
 }
 
 func limaSSHHost(instance string) string { return "lima-" + instance }
@@ -415,3 +439,11 @@ func (l lima) BuildImage(ctx context.Context, req image.BuildRequest) error {
 
 // GuestCommand is the hidden subcommand the host runs inside the Lima VM.
 const GuestCommand = "__guest"
+
+// VMGuestCommand is the hidden subcommand the init script of Range's own VM
+// hands over to.
+const VMGuestCommand = "__vm"
+
+// VMHostCommand is the hidden subcommand that runs the VM of one session on a
+// Mac, from a copy of range signed for Virtualization.framework.
+const VMHostCommand = "__vmhost"
