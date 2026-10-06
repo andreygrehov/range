@@ -52,6 +52,9 @@ type Lazy struct {
 	// What ranged reads of the layers moved, compressed, for object.WireCounter.
 	wireBytes, wireRequests atomic.Int64
 
+	// The budget of kept layers, in bytes (evict.go).
+	keepLimit int64
+
 	// Whole-layer downloads in the background, and the slots that bound them.
 	bulk     sync.WaitGroup
 	bulkOnce sync.Once
@@ -258,6 +261,9 @@ func (l *Lazy) layerIndex(ctx context.Context, r resolved, i int) (*layerIndex, 
 	idx, err := buildIndex(ctx, r.client, layer.Digest, keep)
 	if err != nil {
 		return nil, err
+	}
+	if keep != "" {
+		l.evictKept(keep)
 	}
 	if err := saveIndex(l.indexPath(layer.Digest), idx); err != nil {
 		fmt.Fprintf(os.Stderr, "range: could not keep the index of %s: %v\n", layer.Digest, err)
@@ -559,7 +565,9 @@ func (l *Lazy) newLayerReader(c *client, digest string, idx *layerIndex, budget 
 	// evicted, from the registry, until it is downloaded whole (bulk.go). Kept bytes are checked like fetched ones,
 	// and a kept layer that fails the check is dropped for the network.
 	local := &keptLayer{}
-	local.f, _ = os.Open(l.blobPath(digest))
+	if local.f, _ = os.Open(l.blobPath(digest)); local.f != nil {
+		markUsed(l.blobPath(digest))
+	}
 	fromDisk := gzindex.Verified(local.read, idx.Size, idx.Chunk, idx.ChunkHashes)
 	whole := &bulkLayer{l: l, c: c, digest: digest, size: idx.Size, local: local}
 	fromDownload := gzindex.Verified(whole.readPartial, idx.Size, idx.Chunk, idx.ChunkHashes)

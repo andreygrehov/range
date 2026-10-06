@@ -157,6 +157,7 @@ func (l *Lazy) keepBlob(ctx context.Context, c *client, digest string, progress 
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return "", err
 	}
+	l.evictKept(path)
 	return path, nil
 }
 

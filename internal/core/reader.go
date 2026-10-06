@@ -81,7 +81,9 @@ func Open(ctx context.Context, uri string, c Config) (*Reader, error) {
 	var b object.Backend
 	var err error
 	if name, ok := oci.ImageName(uri); ok {
-		b = oci.NewLazy(name, oci.HostPlatform(), filepath.Join(c.CacheDir, "oci"))
+		lazy := oci.NewLazy(name, oci.HostPlatform(), filepath.Join(c.CacheDir, "oci"))
+		lazy.SetKeepLimit(c.DiskCache)
+		b = lazy
 	} else if hub.IsURI(uri) {
 		b = hub.New()
 	} else if b, err = object.Open(uri, c.s3Endpoint); err != nil {

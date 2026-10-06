@@ -57,7 +57,9 @@ registry, or reads of the kept layer, checked against a SHA-256 for every
 64 KiB. When a session reads an eighth of a layer of 32 MB or more, Range
 downloads the rest of that layer whole in the background, up to three layers at
 once, as `docker pull` does, and keeps it. A workload that reads most of an
-image, such as a build, then costs about one pull, not thousands of requests. Range first looks for a layer's index in the catalog,
+image, such as a build, then costs about one pull, not thousands of requests.
+Kept layers share one budget, the cache size (`--cache-size`, 10 GiB by
+default). Past it, Range removes the layers used least recently. Range first looks for a layer's index in the catalog,
 [range-index](https://github.com/andreygrehov/range-index), and uses one only
 if it names the same layer digest and size. `RANGE_INDEX_URL` sets another
 catalog, and `RANGE_INDEX_URL=off` turns it off. The catalog also holds a
