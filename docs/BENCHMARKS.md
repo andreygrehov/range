@@ -28,6 +28,35 @@ it crosses NBD to the Mac. Giving Range's VM 16 CPUs did not change the warm num
 The `python:3.12` layers were only partly in the catalog that day, so Range indexed four of
 the seven itself in the cold runs.
 
+## Starting Range's VM on Linux
+
+Measured 6 October 2026 on an EC2 c5.metal (Xeon, Ubuntu 24.04, QEMU 8.2), as a user in the
+kvm group. "Ready" is the time from the command to the workload's start, warm, median of five.
+
+| Change | Warm Ready, `python:3.12` |
+| --- | ---: |
+| Before | 1.08 s |
+| The image's layout kept, and a static network instead of DHCP | 0.88 s |
+| And qboot instead of SeaBIOS | 0.80 s |
+
+On a MacBook Pro with Apple silicon, where only the kept layout applies, warm Ready is 0.59 s.
+
+Of a cold boot to the guest's first program, QEMU and the firmware take about 0.18 s, and the
+kernel, its modules and init take about 0.31 s.
+
+We also measured a restore from a QEMU memory snapshot, which agent sandboxes use, against a
+cold boot, three runs each:
+
+| Guest memory | Cold boot | Restore |
+| --- | ---: | ---: |
+| 2 GiB | 0.52 to 0.60 s | 0.23 to 0.25 s |
+| 8 GiB | 0.57 s | 0.57 s |
+
+A restore reads all of the guest's memory, so its time grows with the memory, and at 8 GiB
+it saves nothing. Range does not use snapshots: for this gain, it would have to keep and
+invalidate a snapshot for each kernel, guest and memory size.
+
+
 ## Container images and model repositories, against docker pull
 
 Measured 28 September 2026 on one EC2 m6i.large (2 vCPU, x86-64) in us-east-1, Ubuntu 24.04,
