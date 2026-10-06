@@ -17,11 +17,15 @@ const (
 	optExportName = 1
 	optAbort      = 2
 	optList       = 3
+	optInfo       = 6
 	optGo         = 7
 
 	repAck      = 1
 	repInfo     = 3
 	repErrUnsup = 0x80000001
+
+	infoExport    = 0
+	infoBlockSize = 3
 
 	flagFixedNewstyle = 1
 	flagNoZeroes      = 2

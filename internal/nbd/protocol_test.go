@@ -215,6 +215,76 @@ func TestNBDHandshakeGo(t *testing.T) {
 	}
 }
 
+// Apple's Virtualization.framework asks for INFO, with the block sizes, before
+// GO. The server must describe the export, stay in negotiation, then go.
+func TestNBDHandshakeInfoThenGo(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	errs := make(chan error, 1)
+	const size = 1 << 30
+	go func() { errs <- ServerHandshake(server, size) }()
+
+	if _, err := io.ReadFull(client, make([]byte, 18)); err != nil {
+		t.Fatalf("read greeting: %v", err)
+	}
+	if _, err := client.Write(binary.BigEndian.AppendUint32(nil, flagFixedNewstyle)); err != nil {
+		t.Fatal(err)
+	}
+	send := func(opt uint32, payload []byte) {
+		t.Helper()
+		option := binary.BigEndian.AppendUint64(nil, optionMagic)
+		option = binary.BigEndian.AppendUint32(option, opt)
+		option = binary.BigEndian.AppendUint32(option, uint32(len(payload)))
+		if _, err := client.Write(append(option, payload...)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// replies reads option replies up to the ACK, by info type.
+	replies := func() map[uint16][]byte {
+		t.Helper()
+		got := map[uint16][]byte{}
+		for {
+			head := make([]byte, 20)
+			if _, err := io.ReadFull(client, head); err != nil {
+				t.Fatalf("read reply: %v", err)
+			}
+			payload := make([]byte, binary.BigEndian.Uint32(head[16:20]))
+			if _, err := io.ReadFull(client, payload); err != nil {
+				t.Fatal(err)
+			}
+			switch binary.BigEndian.Uint32(head[12:16]) {
+			case repAck:
+				return got
+			case repInfo:
+				got[binary.BigEndian.Uint16(payload)] = payload[2:]
+			default:
+				t.Fatalf("unexpected reply type %#x", binary.BigEndian.Uint32(head[12:16]))
+			}
+		}
+	}
+	// No export name, one request: NBD_INFO_BLOCK_SIZE.
+	request := []byte{0, 0, 0, 0, 0, 1, 0, infoBlockSize}
+	send(optInfo, request)
+	info := replies()
+	if got := binary.BigEndian.Uint64(info[infoExport]); got != size {
+		t.Fatalf("advertised size = %d, want %d", got, size)
+	}
+	sizes := info[infoBlockSize]
+	if len(sizes) != 12 || binary.BigEndian.Uint32(sizes[0:4]) != 1 || binary.BigEndian.Uint32(sizes[8:12]) != maxRequest {
+		t.Fatalf("block sizes = %x", sizes)
+	}
+	select {
+	case err := <-errs:
+		t.Fatalf("the handshake ended after INFO: %v", err)
+	default:
+	}
+	send(optGo, request)
+	replies()
+	if err := <-errs; err != nil {
+		t.Fatalf("handshake: %v", err)
+	}
+}
+
 // The Go client must negotiate with Range's own server exactly as nbd-client
 // did, and leave the connection in transmission phase for the kernel.
 func TestNBDClientHandshakeAgainstOwnServer(t *testing.T) {

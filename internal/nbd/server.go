@@ -55,18 +55,33 @@ func ServerHandshake(conn net.Conn, size int64) error {
 				return err
 			}
 			return nil
-		case optGo:
+		case optInfo, optGo:
+			// INFO describes the export, and GO does too, then starts the
+			// transmission phase. Apple's Virtualization.framework asks for
+			// INFO first, with the block sizes.
 			info := make([]byte, 0, 12)
-			info = binary.BigEndian.AppendUint16(info, 0) // NBD_INFO_EXPORT
+			info = binary.BigEndian.AppendUint16(info, infoExport)
 			info = binary.BigEndian.AppendUint64(info, uint64(size))
 			info = binary.BigEndian.AppendUint16(info, transmissionFlags)
 			if err := writeOptionReply(conn, option, repInfo, info); err != nil {
 				return err
 			}
+			if requestsInfo(payload, infoBlockSize) {
+				sizes := make([]byte, 0, 14)
+				sizes = binary.BigEndian.AppendUint16(sizes, infoBlockSize)
+				sizes = binary.BigEndian.AppendUint32(sizes, 1)          // minimum
+				sizes = binary.BigEndian.AppendUint32(sizes, 4096)       // preferred
+				sizes = binary.BigEndian.AppendUint32(sizes, maxRequest) // maximum
+				if err := writeOptionReply(conn, option, repInfo, sizes); err != nil {
+					return err
+				}
+			}
 			if err := writeOptionReply(conn, option, repAck, nil); err != nil {
 				return err
 			}
-			return nil
+			if option == optGo {
+				return nil
+			}
 		case optAbort:
 			writeOptionReply(conn, option, repAck, nil)
 			return errors.New("nbd: client aborted negotiation")
@@ -80,6 +95,28 @@ func ServerHandshake(conn net.Conn, size int64) error {
 			}
 		}
 	}
+}
+
+// requestsInfo reports whether an INFO or GO payload asks for an information
+// type: a name, then a count of 16-bit requests.
+func requestsInfo(payload []byte, kind uint16) bool {
+	if len(payload) < 4 {
+		return false
+	}
+	rest := payload[4:]
+	nameLen := int(binary.BigEndian.Uint32(payload[:4]))
+	if nameLen > len(rest)-2 {
+		return false
+	}
+	rest = rest[nameLen:]
+	count := int(binary.BigEndian.Uint16(rest[:2]))
+	rest = rest[2:]
+	for i := 0; i < count && 2*i+2 <= len(rest); i++ {
+		if binary.BigEndian.Uint16(rest[2*i:]) == kind {
+			return true
+		}
+	}
+	return false
 }
 
 func writeOptionReply(w io.Writer, option, replyType uint32, payload []byte) error {
