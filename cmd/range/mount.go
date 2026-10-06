@@ -69,6 +69,9 @@ func commandMount(args []string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if err := session.LoadNBD(); err != nil {
+		return err
+	}
 	device, err := session.AllocateNBDDevice("/sys/block", "/dev")
 	if err != nil {
 		return err

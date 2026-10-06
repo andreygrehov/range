@@ -132,7 +132,8 @@ speaks NBD in Go, so there is no `nbd-client`. What remains is exactly the list
 that `range doctor` prints:
 
 - root
-- the `nbd`, `erofs` and `overlay` kernel modules
+- a kernel with the `nbd`, `erofs` and `overlay` modules. Range loads `nbd`, and
+  the kernel loads the other two when Range mounts those filesystems
 - `mount`/`unshare` from util-linux
 
 On a Mac with Apple silicon, the list is macOS 14 or later. Range downloads the

@@ -158,8 +158,8 @@ measurements are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Requirements
 
-- Linux: root, the `nbd`, `erofs` and `overlay` kernel modules, and `mount` and
-  `unshare` from util-linux.
+- Linux: root, a kernel with the `nbd`, `erofs` and `overlay` modules, which
+  Range loads itself, and `mount` and `unshare` from util-linux.
 - macOS: Apple silicon and macOS 14 or later. On an Intel Mac, Lima.
 - Windows: the Linux build inside WSL2, untested.
 

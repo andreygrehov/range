@@ -31,7 +31,7 @@ range shell s3://bucket/dev.range --workload go-test -- go test ./...
 `range shell` requires:
 
 - root
-- the `nbd` kernel module (`sudo modprobe nbd nbds_max=16`)
+- the `nbd` kernel module, which range loads itself
 - EROFS and overlay in the kernel
 - `mount`, `umount` and `unshare` from util-linux
 
@@ -187,14 +187,14 @@ come from their own documentation, and these two were not run here.
 
 The four alternatives share one architecture: a plugin to containerd, with a long-running daemon,
 a registry and a conversion pipeline. Range has nothing long-lived and no registry. That is a
-claim about moving parts, not about dependencies. Range does need root, `modprobe nbd`, and on
-macOS a Linux VM. `range doctor` lists exactly that:
+claim about moving parts, not about dependencies. Range does need root and the `nbd` module on
+Linux, and on macOS a Linux VM, which it boots itself. `range doctor` lists exactly that:
 
 ```
 Needs
   root             ok              you
   mount, unshare   ok              util-linux, in every distribution
-  nbd              ok              the kernel; load with modprobe
+  nbd              ok              the kernel
   erofs            ok              the kernel, 5.4 and later
   overlay          ok              the kernel
 

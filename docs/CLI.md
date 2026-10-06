@@ -132,8 +132,8 @@ runs non-interactively, and the exit status is the workload's:
 range shell s3://bucket/dev.range --workload go-test -- go test ./...
 ```
 
-This requires root, the `nbd` module, and `mount`, `umount`, `unshare` from
-util-linux. Exports are read-only. Writes land in a local overlay.
+This requires root, a kernel with the `nbd` module, which range loads, and
+`mount`, `umount`, `unshare` from util-linux. Exports are read-only. Writes land in a local overlay.
 
 A container image's entrypoint directory joins `PATH` when it is not there
 already, so `llama-cli` in `ghcr.io/ggml-org/llama.cpp:light-b11206` runs by name.

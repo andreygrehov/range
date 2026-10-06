@@ -36,15 +36,26 @@ func (Native) Requirements() []Requirement {
 	}
 	reqs = append(reqs, Requirement{What: "mount, unshare", OK: tools,
 		Detail: "install util-linux", From: "util-linux, in every distribution"})
-	_, err := os.Stat("/sys/block/nbd0")
-	reqs = append(reqs, Requirement{What: "nbd", OK: err == nil,
-		Detail: "sudo modprobe nbd nbds_max=16", From: "the kernel; load with modprobe"})
+	reqs = append(reqs, nbdRequirement(nbdLoaded(), nbdLoadable()))
 	reqs = append(reqs, Requirement{What: "erofs", OK: tool.KernelHasFilesystem("erofs"),
 		Detail: "needs Linux 5.4 or later built with EROFS; build with --fs ext4 instead",
 		From:   "the kernel, 5.4 and later"})
 	reqs = append(reqs, Requirement{What: "overlay", OK: tool.KernelHasFilesystem("overlay"),
 		Detail: "needs a kernel built with OverlayFS", From: "the kernel"})
 	return reqs
+}
+
+// nbdRequirement says what nbd still needs. A module that can be loaded is
+// range's to load, as root; without root, the root requirement says so.
+func nbdRequirement(loaded, loadable bool) Requirement {
+	switch {
+	case loaded:
+		return Requirement{What: "nbd", OK: true, From: "the kernel"}
+	case loadable:
+		return Requirement{What: "nbd", Fixable: true,
+			Detail: "not loaded; range loads it", From: "the kernel; range loads it"}
+	}
+	return Requirement{What: "nbd", Detail: "this kernel has no nbd module", From: "the kernel"}
 }
 
 // Run attaches the artifact to a free nbd device, mounts it and runs the
@@ -55,6 +66,9 @@ func (Native) Run(ctx context.Context, opts Options, onReady func()) error {
 		return err
 	}
 	sess.State = StateAttaching
+	if err := LoadNBD(); err != nil {
+		return err
+	}
 	device, err := attach(sess, r)
 	if err != nil {
 		return err

@@ -68,3 +68,15 @@ func TestExitStatusOf(t *testing.T) {
 		t.Fatal("an unrelated error was changed")
 	}
 }
+
+func TestNBDRequirement(t *testing.T) {
+	if r := nbdRequirement(true, true); !r.OK {
+		t.Errorf("a loaded nbd is not ok: %+v", r)
+	}
+	if r := nbdRequirement(false, true); r.OK || !r.Fixable {
+		t.Errorf("a loadable nbd must be range's to load, not a blocker: %+v", r)
+	}
+	if r := nbdRequirement(false, false); r.OK || r.Fixable {
+		t.Errorf("a kernel without nbd must block: %+v", r)
+	}
+}

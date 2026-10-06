@@ -61,6 +61,9 @@ func commandGuest(args []string) error {
 	if _, _, err := net.SplitHostPort(*endpoint); err != nil {
 		return err
 	}
+	if err := session.LoadNBD(); err != nil {
+		return err
+	}
 	device, err := session.AllocateNBDDevice("/sys/block", "/dev")
 	if err != nil {
 		return err
