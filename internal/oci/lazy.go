@@ -51,6 +51,11 @@ type Lazy struct {
 
 	// What ranged reads of the layers moved, compressed, for object.WireCounter.
 	wireBytes, wireRequests atomic.Int64
+
+	// Whole-layer downloads in the background, and the slots that bound them.
+	bulk     sync.WaitGroup
+	bulkOnce sync.Once
+	slots    chan struct{}
 }
 
 // WireBytes is the layer bytes fetched since the image was opened.
@@ -496,7 +501,8 @@ type layerReader interface {
 // by its layers, with at least 16 MiB each.
 const segmentBudget = 256 << 20
 
-// keptLayer is a layer on local disk, until it fails a check.
+// keptLayer is a layer on local disk, until it fails a check. A layer
+// downloaded whole in the background arrives later, through adopt.
 type keptLayer struct {
 	mu sync.Mutex
 	f  *os.File
@@ -522,6 +528,18 @@ func (k *keptLayer) read(_ context.Context, off, n int64) ([]byte, error) {
 	return data, nil
 }
 
+// adopt starts reading from f, a copy of the layer checked against its
+// digest, unless a copy is already open.
+func (k *keptLayer) adopt(f *os.File) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.f != nil {
+		f.Close()
+		return
+	}
+	k.f = f
+}
+
 // drop stops using the kept copy and removes it, so the next session does not
 // trip over it again.
 func (k *keptLayer) drop(err error) {
@@ -538,11 +556,13 @@ func (k *keptLayer) drop(err error) {
 
 func (l *Lazy) newLayerReader(c *client, digest string, idx *layerIndex, budget int64) (layerReader, error) {
 	// A layer kept from indexing is read from disk; one indexed elsewhere, or
-	// evicted, from the registry. Kept bytes are checked like fetched ones,
+	// evicted, from the registry, until it is downloaded whole (bulk.go). Kept bytes are checked like fetched ones,
 	// and a kept layer that fails the check is dropped for the network.
 	local := &keptLayer{}
 	local.f, _ = os.Open(l.blobPath(digest))
 	fromDisk := gzindex.Verified(local.read, idx.Size, idx.Chunk, idx.ChunkHashes)
+	whole := &bulkLayer{l: l, c: c, digest: digest, size: idx.Size, local: local}
+	fromDownload := gzindex.Verified(whole.readPartial, idx.Size, idx.Chunk, idx.ChunkHashes)
 	fetch := func(ctx context.Context, off, n int64) ([]byte, error) {
 		if local.open() {
 			data, err := fromDisk(ctx, off, n)
@@ -551,10 +571,14 @@ func (l *Lazy) newLayerReader(c *client, digest string, idx *layerIndex, budget 
 			}
 			local.drop(err)
 		}
+		if data, err := fromDownload(ctx, off, n); err == nil {
+			return data, nil
+		}
 		data, err := c.blobRange(ctx, digest, off, n)
 		if err == nil {
 			l.wireBytes.Add(n)
 			l.wireRequests.Add(1)
+			whole.fetchedRange(n)
 		}
 		return data, err
 	}
