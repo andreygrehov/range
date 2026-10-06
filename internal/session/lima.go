@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -275,6 +276,10 @@ func (l lima) guestExec(args ...string) error {
 // exposes the artifact to the VM over NBD through an SSH reverse tunnel, so the
 // guest needs no AWS access and there is only ever one cache.
 func (l lima) Run(ctx context.Context, opts Options, onReady func()) error {
+	if len(opts.Dirs) > 0 {
+		return errors.New("a directory of this Mac can be mounted in Range's own VM, on Apple silicon " +
+			"with macOS 14 or later, not in the Lima VM")
+	}
 	if err := l.ensure(ctx); err != nil {
 		return err
 	}

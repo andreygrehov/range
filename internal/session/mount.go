@@ -68,6 +68,9 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 	if err := mountExtras(sess, opts.Mounts); err != nil {
 		return err
 	}
+	if err := bindDirs(sess, opts.Dirs); err != nil {
+		return err
+	}
 
 	meta := environment.ReadMetadata(sess.lower)
 	if host := "linux/" + runtime.GOARCH; meta.Platform != "" && meta.Platform != host {

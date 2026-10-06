@@ -43,7 +43,7 @@ func commandVMHost(_ []string) error {
 	}
 	machine, err := vm.Start(vm.Spec{
 		Kernel: cfg.Kernel, Initrd: cfg.Initrd, CPUs: cfg.CPUs, Memory: cfg.Memory,
-		Disks: cfg.Disks, Console: console,
+		Disks: cfg.Disks, Console: console, Shares: cfg.Guest.Shares,
 	})
 	if err != nil {
 		return err

@@ -28,12 +28,61 @@ type Mount struct {
 	Device string
 }
 
+// Dir is a directory of this machine shown read-write inside the
+// environment, at Target, the way docker run -v shows one.
+type Dir struct {
+	Path   string
+	Target string
+}
+
+// LocalDir reports whether the source of a --mount is a directory on this
+// machine, and returns its absolute path. A URI, or a file such as a local
+// .range artifact, is not one.
+func LocalDir(source string) (string, bool) {
+	if strings.Contains(source, "://") {
+		return "", false
+	}
+	if rest, ok := strings.CutPrefix(source, "~/"); ok {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", false
+		}
+		source = filepath.Join(home, rest)
+	}
+	info, err := os.Stat(source)
+	if err != nil || !info.IsDir() {
+		return "", false
+	}
+	abs, err := filepath.Abs(source)
+	return abs, err == nil
+}
+
+// bindDirs shows each directory inside the environment, read-write.
+func bindDirs(sess *Session, dirs []Dir) error {
+	for _, d := range dirs {
+		target, err := makeDirIn(sess.root, d.Target)
+		if err != nil {
+			return err
+		}
+		if err := tool.Run("mount", "--bind", d.Path, target); err != nil {
+			return fmt.Errorf("show %s at %s: %w", d.Path, d.Target, err)
+		}
+		sess.Push(func() error {
+			if err := tool.Run("umount", target); err != nil {
+				return tool.Run("umount", "-l", target)
+			}
+			return nil
+		})
+	}
+	return nil
+}
+
 // ParseMount splits "URI:/path" at the last ":/", so a URI's own scheme
 // separator stays with the URI.
 func ParseMount(spec string) (uri, target string, err error) {
 	at := strings.LastIndex(spec, ":/")
 	if at <= 0 {
-		return "", "", fmt.Errorf("--mount %q: want URI:/path, e.g. hf://org/model:/models", spec)
+		return "", "", fmt.Errorf("--mount %q: want SOURCE:/path, e.g. hf://org/model:/models or .:/work", spec)
 	}
 	uri, target = spec[:at], spec[at+1:]
 	if err := CheckMountTarget(target); err != nil {

@@ -15,6 +15,12 @@ Any image from a container registry:
 range shell python:3.12
 ```
 
+With the current directory inside, read-write, the way `docker run -v` does it:
+
+```bash
+range run python:3.12 --mount .:/work --workdir /work -- python3 app.py
+```
+
 A chat model, from nothing, in one line. Range opens the llama.cpp image from its
 registry and mounts the model repository at `/model`:
 

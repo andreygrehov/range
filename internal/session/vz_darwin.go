@@ -108,6 +108,9 @@ func (vzRuntime) Run(ctx context.Context, opts Options, onReady func()) error {
 	for _, m := range opts.Mounts {
 		cfg.Guest.Mounts = append(cfg.Guest.Mounts, m.Target)
 	}
+	for i, d := range opts.Dirs {
+		cfg.Guest.Shares = append(cfg.Guest.Shares, vm.Share{Tag: vm.ShareTag(i), Path: d.Path, Target: d.Target})
+	}
 	if terminal {
 		cfg.Guest.Rows, cfg.Guest.Cols = windowSize(int(os.Stdout.Fd()))
 	}

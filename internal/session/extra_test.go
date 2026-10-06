@@ -77,3 +77,26 @@ func TestMakeDirInRefusesAFile(t *testing.T) {
 		t.Error("a file was accepted as a mount point")
 	}
 }
+
+// A --mount source that is a directory here is shared; a URI, a file such as
+// a local artifact, or a path that does not exist is not.
+func TestLocalDir(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "env.range")
+	os.WriteFile(file, nil, 0o644)
+	if got, ok := LocalDir(dir); !ok || got != dir {
+		t.Errorf("LocalDir(%q) = %q, %v", dir, got, ok)
+	}
+	t.Chdir(dir)
+	if got, ok := LocalDir("."); !ok || got != dir && !strings.HasSuffix(got, dir) {
+		t.Errorf(`LocalDir(".") = %q, %v, want %q`, got, ok, dir)
+	}
+	for _, source := range []string{file, "hf://org/model", "s3://bucket/env.range", filepath.Join(dir, "missing")} {
+		if got, ok := LocalDir(source); ok {
+			t.Errorf("LocalDir(%q) = %q, want no directory", source, got)
+		}
+	}
+	if uri, target, err := ParseMount(".:/work"); err != nil || uri != "." || target != "/work" {
+		t.Errorf(`ParseMount(".:/work") = %q, %q, %v`, uri, target, err)
+	}
+}

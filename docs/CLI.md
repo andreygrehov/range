@@ -17,6 +17,7 @@ range publish <artifact> s3://bucket/key  # upload it, once
 range shell <uri>                         # enter it, without downloading it
 range shell python:3.12                   # or any container image, from its registry
 range shell <uri> --mount hf://org/model:/model   # with a model repository inside
+range run <uri> --mount .:/work -- make           # with this directory inside, read-write
 range run <uri> [-- COMMAND...]           # run one command inside it
 range mount <uri> <dir>                   # mount it read-only on this Linux host
 range index IMAGE... [-o DIR]             # index images for a catalog, no root needed
@@ -110,7 +111,7 @@ ships.
 | `--keep` | off | Keep this session's writable layer |
 | `--profile off\|record\|auto` | `auto` | Working-set profile handling |
 | `--prefetch-limit SIZE` | `256MiB` | Ceiling on profile prefetch |
-| `--mount URI:/path` | none | Show another source read-only at `/path`, e.g. `hf://org/model:/model`. Repeatable |
+| `--mount SOURCE:/path` | none | Show a remote source read-only at `/path`, e.g. `hf://org/model:/model`, or a directory of this machine read-write, e.g. `.:/work`. Repeatable |
 
 With no `COMMAND`, an interactive shell starts. With a `COMMAND`, the command
 runs non-interactively, and the exit status is the workload's:
@@ -124,9 +125,11 @@ util-linux. Exports are read-only. Writes land in a local overlay.
 
 A container image's entrypoint directory joins `PATH` when it is not there
 already, so `llama-cli` in `ghcr.io/ggml-org/llama.cpp:light-b11206` runs by name.
-Each `--mount` source gets its own cache and profile. Range mounts it with
+Each remote `--mount` source gets its own cache and profile. Range mounts it with
 `ro,nodev,nosuid`, and refuses a target path that crosses a symlink in the
-environment.
+environment. Range shares a directory of this machine read-write: on Linux with a
+bind mount, in Range's VM on a Mac with virtiofs. There, files that the workload
+writes belong to you, not to root. The Lima VM does not share directories.
 
 ## Mount
 

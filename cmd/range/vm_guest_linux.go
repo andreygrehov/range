@@ -99,9 +99,22 @@ func runVMGuest() (int, error) {
 	for i, target := range cfg.Mounts {
 		mounts[i] = session.Mount{Target: target, Device: vm.DiskName(i + 1)}
 	}
+	// Each directory of the Mac arrives as a virtiofs share, mounted here
+	// first and then shown in the environment like a directory on Linux.
+	var dirs []session.Dir
+	for i, share := range cfg.Shares {
+		at := fmt.Sprintf("/run/range-share/%d", i)
+		if err := os.MkdirAll(at, 0o755); err != nil {
+			return 1, err
+		}
+		if err := syscall.Mount(share.Tag, at, "virtiofs", 0, ""); err != nil {
+			return 1, fmt.Errorf("mount the shared directory for %s: %w", share.Target, err)
+		}
+		dirs = append(dirs, session.Dir{Path: at, Target: share.Target})
+	}
 	opts := session.Options{
 		Session: sess, Workload: cfg.Workload, Workdir: cfg.Workdir, ShellPath: cfg.ShellPath,
-		Command: cfg.Command, Mounts: mounts, DefaultCommand: cfg.DefaultCommand,
+		Command: cfg.Command, Mounts: mounts, Dirs: dirs, DefaultCommand: cfg.DefaultCommand,
 		ControllingTerminal: cfg.Terminal,
 	}
 	runErr := session.MountAndRun(context.Background(), opts, vm.DiskName(0), func() {

@@ -51,7 +51,7 @@ func runSession(args []string, defaultCommand bool) error {
 	var keep bool
 	var mountSpecs []string
 	r, c, command, err := openFromArgs("shell", args, func(fs *flag.FlagSet) {
-		fs.Func("mount", "URI:/path, a further filesystem shown read-only inside (repeatable)", func(v string) error {
+		fs.Func("mount", "SOURCE:/path: a remote filesystem, read-only, or a directory of this machine, read-write (repeatable)", func(v string) error {
 			if _, _, err := session.ParseMount(v); err != nil {
 				return err
 			}
@@ -92,8 +92,13 @@ func runSession(args []string, defaultCommand bool) error {
 
 	// Each mount is a reader of its own, with its own cache and profile.
 	var mounts []session.Mount
+	var dirs []session.Dir
 	for _, spec := range mountSpecs {
 		uri, target, _ := session.ParseMount(spec)
+		if path, ok := session.LocalDir(uri); ok {
+			dirs = append(dirs, session.Dir{Path: path, Target: target})
+			continue
+		}
 		mr, err := core.Open(context.Background(), uri, c)
 		if err != nil {
 			return fmt.Errorf("--mount %s: %w", uri, err)
@@ -151,13 +156,13 @@ func runSession(args []string, defaultCommand bool) error {
 	opts := session.Options{
 		Reader: r, Config: c, Session: sess, Workload: workload, Workdir: workdir,
 		ShellPath: shellPath, Command: command, UpperDir: upperDir, EnvName: name, Keep: keep,
-		Mounts: mounts, DefaultCommand: defaultCommand,
+		Mounts: mounts, Dirs: dirs, DefaultCommand: defaultCommand,
 	}
 	runErr := host.Run(ctx, opts, func() {
 		sess.State = session.StateReady
 		sess.ReadyIn = time.Since(started)
 		r.ReadyIn, r.SessionName = sess.ReadyIn, sess.Name
-		printEnvironmentBanner(sess, r, sess.Meta, profileHit, priorSessions, mounts)
+		printEnvironmentBanner(sess, r, sess.Meta, profileHit, priorSessions, mounts, dirs)
 	})
 
 	// Record what this session needed before tearing anything down.
@@ -209,7 +214,7 @@ func bannerLine(format string, args ...any) {
 	fmt.Printf(format+ending, args...)
 }
 
-func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environment.Metadata, profileHit bool, priorSessions int64, mounts []session.Mount) {
+func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environment.Metadata, profileHit bool, priorSessions int64, mounts []session.Mount, dirs []session.Dir) {
 	bannerLine("")
 	bannerLine("Range environment")
 	bannerLine("  Artifact          %s", r.Ident.URI)
@@ -219,6 +224,9 @@ func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environm
 	bannerLine("  Logical size      %s", bytesize.Format(r.Size()))
 	for _, m := range mounts {
 		bannerLine("  Mounted           %s at %s (%s)", m.Reader.Ident.URI, m.Target, bytesize.Format(m.Reader.Size()))
+	}
+	for _, d := range dirs {
+		bannerLine("  Shared            %s at %s", d.Path, d.Target)
 	}
 	bannerLine("  Runtime           %s/%s", runtime.GOOS, runtime.GOARCH)
 	bannerLine("  Workload          %s", r.Workload)

@@ -21,6 +21,8 @@ type Spec struct {
 	Disks []string
 	// Console receives the kernel's and init's output; nil discards it.
 	Console *os.File
+	// Shares are directories of the Mac the guest mounts with virtiofs.
+	Shares []Share
 }
 
 // Machine is a running VM.
@@ -86,6 +88,26 @@ func Start(spec Spec) (*Machine, error) {
 		m.keep = append(m.keep, attachment, disk)
 	}
 	config.SetStorageDevicesVirtualMachineConfiguration(disks)
+
+	var shares []vz.DirectorySharingDeviceConfiguration
+	for _, share := range spec.Shares {
+		dir, err := vz.NewSharedDirectory(share.Path, false)
+		if err != nil {
+			return nil, fmt.Errorf("share %s: %w", share.Path, err)
+		}
+		single, err := vz.NewSingleDirectoryShare(dir)
+		if err != nil {
+			return nil, fmt.Errorf("share %s: %w", share.Path, err)
+		}
+		device, err := vz.NewVirtioFileSystemDeviceConfiguration(share.Tag)
+		if err != nil {
+			return nil, fmt.Errorf("share %s: %w", share.Path, err)
+		}
+		device.SetDirectoryShare(single)
+		shares = append(shares, device)
+		m.keep = append(m.keep, dir, single, device)
+	}
+	config.SetDirectorySharingDevicesVirtualMachineConfiguration(shares)
 
 	nat, err := vz.NewNATNetworkDeviceAttachment()
 	if err != nil {

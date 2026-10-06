@@ -76,6 +76,8 @@ type Options struct {
 	// Mounts are further remote filesystems shown read-only inside the
 	// environment.
 	Mounts []Mount
+	// Dirs are directories of this machine shown read-write inside it.
+	Dirs []Dir
 	// DefaultCommand runs the environment's own command when Command is
 	// empty, instead of a shell.
 	DefaultCommand bool
