@@ -4,6 +4,30 @@ Every number here is a measurement, with the setup next to it. Dates matter: the
 changed over time, and this page labels older runs as such.
 
 
+## Real work on a Mac, against Docker Desktop
+
+Measured 6 October 2026 on a MacBook Pro with Apple silicon, macOS 15.4, over wifi. Range 0.5
+with its own VM (8 CPUs), against Docker Desktop 28.0.4 (16 CPUs). Each cell is the total time
+of one command, from the prompt back to the prompt, median of three. All 48 runs succeeded.
+Cold: nothing of the image on this Mac. Docker starts without the image, and Range starts from an
+empty cache with its VM files kept. Warm: the same command again.
+
+| Command | Image | Cold, Range | Cold, Docker | Warm, Range | Warm, Docker |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `pip install requests numpy`, then import both | `python:3.12` | 12.2 s | 17.4 s | 4.5 s | 3.8 s |
+| `python -m compileall` over the standard library | `python:3.12` | 10.3 s | 14.6 s | 2.2 s | 1.5 s |
+| `cargo new` and `cargo build` | `rust:1.82` | 15.2 s | 16.7 s | 1.6 s | 0.6 s |
+| `go build` of a program in a shared directory | `golang:1.23` | 10.9 s | 15.1 s | 4.2 s | 3.4 s |
+
+Cold, Range is faster in every row. Before Range downloaded a heavily read layer whole, the
+`cargo` row was 25.5 s against 18.1 s: a build reads most of the image, and ranged reads lost
+to one bulk download. Warm, Docker Desktop is 0.6 to 1.0 s faster in every row. Its VM is
+always running, with a warm page cache. Range boots a VM for each session, and every read in
+it crosses NBD to the Mac. Giving Range's VM 16 CPUs did not change the warm numbers.
+
+The `python:3.12` layers were only partly in the catalog that day, so Range indexed four of
+the seven itself in the cold runs.
+
 ## Container images and model repositories, against docker pull
 
 Measured 28 September 2026 on one EC2 m6i.large (2 vCPU, x86-64) in us-east-1, Ubuntu 24.04,
