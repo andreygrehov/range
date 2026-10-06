@@ -19,6 +19,10 @@ import (
 type client struct {
 	client *http.Client
 	ref    Reference
+	// fallback serves the same digests when this registry lacks a blob: the
+	// origin behind a mirror. Every blob is checked against its digest, so
+	// where it comes from does not matter.
+	fallback *client
 
 	mu    sync.Mutex
 	token string
@@ -158,6 +162,12 @@ func (b *resumingBlob) open() error {
 			b.c.authenticate(b.ctx)
 			continue
 		}
+		if resp.StatusCode == http.StatusNotFound && b.c.fallback != nil {
+			resp.Body.Close()
+			b.c, attempt = b.c.fallback, -1
+			url = fmt.Sprintf("https://%s/v2/%s/blobs/%s", b.c.ref.registry, b.c.ref.repository, b.digest)
+			continue
+		}
 		want := http.StatusOK
 		if b.pos > 0 {
 			want = http.StatusPartialContent
@@ -214,6 +224,10 @@ func (c *client) blobRange(ctx context.Context, digest string, offset, length in
 			resp.Body.Close()
 			c.authenticate(ctx)
 			continue
+		}
+		if resp.StatusCode == http.StatusNotFound && c.fallback != nil {
+			resp.Body.Close()
+			return c.fallback.blobRange(ctx, digest, offset, length)
 		}
 		defer resp.Body.Close()
 		switch resp.StatusCode {

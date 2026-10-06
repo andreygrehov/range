@@ -137,11 +137,13 @@ func resolve(ctx context.Context, image string, want Platform) (resolved, error)
 	ref := ParseReference(image)
 	// RANGE_REGISTRY_MIRROR serves Docker Hub images through a mirror with the
 	// same digests, such as mirror.gcr.io, away from Docker Hub's rate limit.
-	// A mirror that cannot serve the image is passed over for Docker Hub.
+	// A mirror that cannot serve the image is passed over for Docker Hub, and
+	// a layer the mirror lacks is read from Docker Hub.
 	if mirror := os.Getenv("RANGE_REGISTRY_MIRROR"); mirror != "" && ref.registry == "registry-1.docker.io" {
 		mirrored := ref
 		mirrored.registry = strings.TrimSuffix(strings.TrimPrefix(mirror, "https://"), "/")
 		if r, err := resolveFrom(ctx, image, mirrored, want); err == nil {
+			r.client.fallback = newClient(ref)
 			return r, nil
 		}
 	}
