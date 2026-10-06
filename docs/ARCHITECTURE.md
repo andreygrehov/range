@@ -69,6 +69,9 @@ offset in a layer's uncompressed tar stream, or a file on the Hub. A read of the
 image becomes a read of the sources it covers. Core above it sees one object with
 a size and an identity, as for any artifact.
 
+Range keeps the layout of a container image on disk, named by its manifest digest.
+A later session loads it and reads no layer index until it reads that layer.
+
 ## Immutability
 
 An opened artifact is one immutable generation. Its cache key is a hash of URI,

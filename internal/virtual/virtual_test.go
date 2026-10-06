@@ -52,12 +52,12 @@ func TestImageReadsBack(t *testing.T) {
 	local := []byte(`{"shell": "/bin/sh"}`)
 	root, nodes, data := tree(t, bodies, local)
 	var reads atomic.Int64
-	img, err := Build(root, nodes, 1<<20, func(n *erofs.Node) ReadFunc {
+	img, err := Build(root, nodes, 1<<20, func(n *erofs.Node) (ReadFunc, Tag) {
 		return func(_ context.Context, dst []byte, off int64) error {
 			reads.Add(1)
 			copy(dst, data[n][off:])
 			return nil
-		}
+		}, Tag{}
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -109,8 +109,8 @@ func TestImageReadsBack(t *testing.T) {
 func TestAReadErrorFailsTheRange(t *testing.T) {
 	root, nodes, _ := tree(t, map[string][]byte{"f": body(4, 5000)}, []byte("x"))
 	boom := errors.New("gone")
-	img, err := Build(root, nodes, 0, func(*erofs.Node) ReadFunc {
-		return func(context.Context, []byte, int64) error { return boom }
+	img, err := Build(root, nodes, 0, func(*erofs.Node) (ReadFunc, Tag) {
+		return func(context.Context, []byte, int64) error { return boom }, Tag{}
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -120,5 +120,43 @@ func TestAReadErrorFailsTheRange(t *testing.T) {
 	}
 	if _, err := img.ReadRange(context.Background(), img.Size-1, 2); err == nil {
 		t.Error("a read past the end succeeded")
+	}
+}
+
+// A saved image loads back the same, and asks for its readers by tag. A cut
+// or changed file is refused.
+func TestSavedImageLoadsBack(t *testing.T) {
+	bodies := map[string][]byte{"big": body(1, 3<<20+5), "small": body(2, 100)}
+	root, nodes, data := tree(t, bodies, []byte(`{"shell": "/bin/sh"}`))
+	byTag := map[Tag]*erofs.Node{}
+	reader := func(n *erofs.Node) ReadFunc {
+		return func(_ context.Context, dst []byte, off int64) error { copy(dst, data[n][off:]); return nil }
+	}
+	img, err := Build(root, nodes, 1<<20, func(n *erofs.Node) (ReadFunc, Tag) {
+		tag := Tag{int64(len(byTag)), 7}
+		byTag[tag] = n
+		return reader(n), tag
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved bytes.Buffer
+	if err := img.Save(&saved); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(saved.Bytes(), func(tag Tag) ReadFunc { return reader(byTag[tag]) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := img.ReadRange(context.Background(), 0, img.Size)
+	got, err := loaded.ReadRange(context.Background(), 0, loaded.Size)
+	if err != nil || !bytes.Equal(got, want) {
+		t.Fatalf("the loaded image reads back different bytes (%v)", err)
+	}
+	b := saved.Bytes()
+	for _, bad := range [][]byte{b[:len(b)/2], append(append([]byte{}, b[:100]...), append([]byte{b[100] ^ 1}, b[101:]...)...), nil} {
+		if _, err := Load(bad, func(Tag) ReadFunc { return nil }); err == nil {
+			t.Fatal("a damaged saved image was loaded")
+		}
 	}
 }

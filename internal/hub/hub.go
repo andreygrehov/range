@@ -392,12 +392,12 @@ func (b *Backend) build(ctx context.Context, ref repoRef) (*image, error) {
 		}
 	}
 
-	built, err := virtual.Build(root, nodes, align, func(node *erofs.Node) virtual.ReadFunc {
+	built, err := virtual.Build(root, nodes, align, func(node *erofs.Node) (virtual.ReadFunc, virtual.Tag) {
 		f := file{
 			url:  b.endpoint + ref.webPrefix() + "/resolve/" + rev.SHA + "/" + escapePath(files[node]),
 			size: node.Size,
 		}
-		return func(ctx context.Context, dst []byte, off int64) error { return b.fetch(ctx, f, off, dst) }
+		return func(ctx context.Context, dst []byte, off int64) error { return b.fetch(ctx, f, off, dst) }, virtual.Tag{}
 	})
 	if err != nil {
 		return nil, err

@@ -126,6 +126,48 @@ func (l *Lazy) ReadRange(ctx context.Context, _ string, offset, length int64, _,
 // such as environment.json, must not be answered from blocks of the old one.
 const layoutVersion = "range-oci-1:"
 
+// layOut builds the image's layout from its layers' indexes, opening each
+// layer's reader on the way.
+func (l *Lazy) layOut(ctx context.Context, r resolved, layers *layerSet) (*virtual.Image, error) {
+	blobs, err := os.MkdirTemp("", "range-blobs-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(blobs)
+	tree := newTree(blobs)
+	where := map[*erofs.Node]fileAt{}
+	l.fetchCatalogIndexes(ctx, r)
+	for i, layer := range r.manifest.Layers {
+		idx, err := l.layerIndex(ctx, r, i)
+		if err != nil {
+			return nil, fmt.Errorf("%s: layer %s: %w", l.image, layer.Digest, err)
+		}
+		reader, err := l.newLayerReader(r.client, layer.Digest, idx, layers.budget())
+		if err != nil {
+			return nil, err
+		}
+		layers.put(i, reader)
+		for _, entry := range idx.Entries {
+			offset := entry.Offset
+			if err := tree.apply(entry.header(), i, func(node *erofs.Node) error {
+				node.External = true
+				where[node] = fileAt{layer: i, offset: offset}
+				return nil
+			}); err != nil {
+				return nil, fmt.Errorf("%s: layer %s: %w", l.image, layer.Digest, err)
+			}
+		}
+	}
+	if err := tree.finish(l.image, r.config, l.platform); err != nil {
+		return nil, err
+	}
+	root, nodes := tree.nodes()
+	return virtual.Build(root, nodes, 1<<20, func(node *erofs.Node) (virtual.ReadFunc, virtual.Tag) {
+		tag := virtual.Tag{int64(where[node].layer), where[node].offset}
+		return layers.readFunc(tag), tag
+	})
+}
+
 // fileAt is where a file's body starts: a layer and an offset in that layer's
 // uncompressed tar stream.
 type fileAt struct {
@@ -143,48 +185,13 @@ func (l *Lazy) open(ctx context.Context) (*lazyImage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", l.image, err)
 	}
-	blobs, err := os.MkdirTemp("", "range-blobs-")
-	if err != nil {
-		return nil, err
-	}
-	defer os.RemoveAll(blobs)
-	tree := newTree(blobs)
-	where := map[*erofs.Node]fileAt{}
-	readers := make([]layerReader, len(r.manifest.Layers))
-	l.fetchCatalogIndexes(ctx, r)
-	for i, layer := range r.manifest.Layers {
-		idx, err := l.layerIndex(ctx, r, i)
-		if err != nil {
-			return nil, fmt.Errorf("%s: layer %s: %w", l.image, layer.Digest, err)
-		}
-		budget := max(16<<20, segmentBudget/int64(len(r.manifest.Layers)))
-		if readers[i], err = l.newLayerReader(r.client, layer.Digest, idx, budget); err != nil {
+	layers := newLayerSet(l, r)
+	img, ok := l.loadLayout(r, layers)
+	if !ok {
+		if img, err = l.layOut(ctx, r, layers); err != nil {
 			return nil, err
 		}
-		for _, entry := range idx.Entries {
-			offset := entry.Offset
-			if err := tree.apply(entry.header(), i, func(node *erofs.Node) error {
-				node.External = true
-				where[node] = fileAt{layer: i, offset: offset}
-				return nil
-			}); err != nil {
-				return nil, fmt.Errorf("%s: layer %s: %w", l.image, layer.Digest, err)
-			}
-		}
-	}
-	if err := tree.finish(l.image, r.config, l.platform); err != nil {
-		return nil, err
-	}
-	root, nodes := tree.nodes()
-	img, err := virtual.Build(root, nodes, 1<<20, func(node *erofs.Node) virtual.ReadFunc {
-		at := where[node]
-		reader := readers[at.layer]
-		return func(ctx context.Context, dst []byte, off int64) error {
-			return reader.ReadAt(ctx, dst, at.offset+off)
-		}
-	})
-	if err != nil {
-		return nil, err
+		l.saveLayout(r.digest, img)
 	}
 	l.opened = &lazyImage{digest: r.digest, Image: img}
 	return l.opened, nil

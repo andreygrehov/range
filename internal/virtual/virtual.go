@@ -26,10 +26,19 @@ import (
 // ReadFunc fills dst with a file's bytes starting at off within the file.
 type ReadFunc func(ctx context.Context, dst []byte, off int64) error
 
+// Tag is the caller's own name for where a file's bytes come from, such as
+// a layer and an offset in it. A saved image keeps the tags, not the
+// readers, and Load asks for each reader again by its tag.
+type Tag [2]int64
+
+// Locator says how to read an external file's bytes, and tags it.
+type Locator func(*erofs.Node) (ReadFunc, Tag)
+
 // Extent is where one external file's bytes sit in the image.
 type Extent struct {
 	Start, Size int64
 	Read        ReadFunc
+	Tag         Tag
 }
 
 // region is a part of the image held in memory.
@@ -49,9 +58,12 @@ type Image struct {
 	Concurrency int
 }
 
+// concurrency is an image's Concurrency unless its caller sets another.
+const concurrency = 8
+
 // Build lays out nodes as erofs.WriteNodes does. For every node marked
 // External, locate returns how to read its bytes.
-func Build(root *erofs.Node, nodes []*erofs.Node, align int64, locate func(*erofs.Node) ReadFunc) (*Image, error) {
+func Build(root *erofs.Node, nodes []*erofs.Node, align int64, locate Locator) (*Image, error) {
 	scratch, err := os.CreateTemp("", "range-virtual-*.erofs")
 	if err != nil {
 		return nil, err
@@ -68,7 +80,7 @@ func Build(root *erofs.Node, nodes []*erofs.Node, align int64, locate func(*erof
 	}
 	defer f.Close()
 
-	img := &Image{Size: st.Size, Concurrency: 8}
+	img := &Image{Size: st.Size, Concurrency: concurrency}
 	// Metadata is the superblock, the inode table, and the directory and
 	// symlink blocks, which the writer lays out before any file body. It ends
 	// with the last of them, not at the first file, which alignment can push
@@ -93,11 +105,11 @@ func Build(root *erofs.Node, nodes []*erofs.Node, align int64, locate func(*erof
 		}
 		start := int64(node.BlockAddr()) * erofs.BlockSize
 		if node.External {
-			read := locate(node)
+			read, tag := locate(node)
 			if read == nil {
 				return nil, fmt.Errorf("virtual: no reader for an external file of %d bytes", node.Size)
 			}
-			img.Extents = append(img.Extents, Extent{Start: start, Size: node.Size, Read: read})
+			img.Extents = append(img.Extents, Extent{Start: start, Size: node.Size, Read: read, Tag: tag})
 			continue
 		}
 		data := make([]byte, node.Size)
