@@ -131,7 +131,7 @@ func (l *Lazy) open(ctx context.Context) (*lazyImage, error) {
 	if l.opened != nil {
 		return l.opened, nil
 	}
-	r, err := resolve(ctx, l.image, l.platform)
+	r, err := resolveCached(ctx, l.dir, l.image, l.platform)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", l.image, err)
 	}

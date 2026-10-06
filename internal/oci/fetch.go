@@ -128,6 +128,9 @@ type resolved struct {
 	manifest manifest
 	digest   string // of the platform manifest
 	config   ImageConfig
+
+	// The platform manifest and the config as served, for the tag cache.
+	manifestBody, configBody []byte
 }
 
 // resolve finds the manifest for want, following an index, and reads the
@@ -154,7 +157,7 @@ func resolveFrom(ctx context.Context, image string, ref Reference, want Platform
 	client := newClient(ref)
 	client.authenticate(ctx)
 
-	manifest, digest, err := client.manifestWithDigest(ctx, ref.reference)
+	manifest, digest, body, err := client.manifestWithDigest(ctx, ref.reference)
 	if err != nil {
 		return resolved{}, err
 	}
@@ -169,14 +172,14 @@ func resolveFrom(ctx context.Context, image string, ref Reference, want Platform
 		if chosen == "" {
 			return resolved{}, fmt.Errorf("%s has no %s image", image, want)
 		}
-		if manifest, digest, err = client.manifestWithDigest(ctx, chosen); err != nil {
+		if manifest, digest, body, err = client.manifestWithDigest(ctx, chosen); err != nil {
 			return resolved{}, err
 		}
 	}
 	if len(manifest.Layers) == 0 {
 		return resolved{}, fmt.Errorf("%s has no layers", image)
 	}
-	config, err := client.imageConfig(ctx, ref, manifest.Config.Digest)
+	config, configBody, err := client.imageConfig(ctx, ref, manifest.Config.Digest)
 	if err != nil {
 		return resolved{}, err
 	}
@@ -186,5 +189,6 @@ func resolveFrom(ctx context.Context, image string, ref Reference, want Platform
 		return resolved{}, fmt.Errorf("%s is a %s/%s image, not %s; pick a tag built for %s",
 			image, config.OS, config.Architecture, want, want)
 	}
-	return resolved{client: client, ref: ref, manifest: manifest, digest: digest, config: config}, nil
+	return resolved{client: client, ref: ref, manifest: manifest, digest: digest, config: config,
+		manifestBody: body, configBody: configBody}, nil
 }

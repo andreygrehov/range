@@ -280,29 +280,29 @@ type manifest struct {
 // body is checked against that digest, because every layer digest checked
 // later is only as trustworthy as the manifest that listed it.
 func (c *client) manifest(ctx context.Context, reference string) (manifest, error) {
-	m, _, err := c.manifestWithDigest(ctx, reference)
+	m, _, _, err := c.manifestWithDigest(ctx, reference)
 	return m, err
 }
 
 // manifestWithDigest also returns the manifest's digest: the one asked for,
-// or the SHA-256 of the body when it was asked for by tag.
-func (c *client) manifestWithDigest(ctx context.Context, reference string) (manifest, string, error) {
+// or the SHA-256 of the body when it was asked for by tag. And the body.
+func (c *client) manifestWithDigest(ctx context.Context, reference string) (manifest, string, []byte, error) {
 	url := fmt.Sprintf("https://%s/v2/%s/manifests/%s", c.ref.registry, c.ref.repository, reference)
 	resp, err := c.do(ctx, http.MethodGet, url, manifestTypes)
 	if err != nil {
-		return manifest{}, "", err
+		return manifest{}, "", nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return manifest{}, "", fmt.Errorf("manifest %s: %s", reference, resp.Status)
+		return manifest{}, "", nil, fmt.Errorf("manifest %s: %s", reference, resp.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	if err != nil {
-		return manifest{}, "", err
+		return manifest{}, "", nil, err
 	}
 	if isDigest(reference) {
 		if err := verifyDigest(body, reference); err != nil {
-			return manifest{}, "", fmt.Errorf("manifest %s: %w", reference, err)
+			return manifest{}, "", nil, fmt.Errorf("manifest %s: %w", reference, err)
 		}
 	}
 	digest := reference
@@ -310,11 +310,17 @@ func (c *client) manifestWithDigest(ctx context.Context, reference string) (mani
 		sum := sha256.Sum256(body)
 		digest = "sha256:" + hex.EncodeToString(sum[:])
 	}
-	var m manifest
-	if err := json.Unmarshal(body, &m); err != nil {
-		return manifest{}, "", err
+	m, err := parseManifest(body)
+	if err != nil {
+		return manifest{}, "", nil, err
 	}
-	return m, digest, nil
+	return m, digest, body, nil
+}
+
+func parseManifest(body []byte) (manifest, error) {
+	var m manifest
+	err := json.Unmarshal(body, &m)
+	return m, err
 }
 
 // isDigest: a tag cannot contain a colon, so anything with one is a digest,
@@ -359,24 +365,31 @@ type ImageConfig struct {
 	} `json:"config"`
 }
 
-func (c *client) imageConfig(ctx context.Context, ref Reference, digest string) (ImageConfig, error) {
+func (c *client) imageConfig(ctx context.Context, ref Reference, digest string) (ImageConfig, []byte, error) {
 	var config ImageConfig
 	if digest == "" {
-		return config, errors.New("the manifest names no image config")
+		return config, nil, errors.New("the manifest names no image config")
 	}
 	url := fmt.Sprintf("https://%s/v2/%s/blobs/%s", ref.registry, ref.repository, digest)
 	resp, err := c.do(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return config, err
+		return config, nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return config, fmt.Errorf("image config %s: %s", digest, resp.Status)
+		return config, nil, fmt.Errorf("image config %s: %s", digest, resp.Status)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
-		return config, err
+		return config, nil, err
 	}
+	config, err = parseConfig(body, digest)
+	return config, body, err
+}
+
+// parseConfig checks an image config against its digest and decodes it.
+func parseConfig(body []byte, digest string) (ImageConfig, error) {
+	var config ImageConfig
 	if err := verifyDigest(body, digest); err != nil {
 		return config, fmt.Errorf("image config %s: %w", digest, err)
 	}

@@ -37,9 +37,11 @@ type fakeRegistry struct {
 
 	mu        sync.Mutex
 	manifest  []byte
-	fullGets  int   // blob GETs without a Range header
-	rangeGets int   // blob GETs with one
-	bytesSent int64 // blob bytes, either way
+	stall     chan struct{} // when set, manifest requests wait for it to close
+	manifests int           // manifest requests answered
+	fullGets  int           // blob GETs without a Range header
+	rangeGets int           // blob GETs with one
+	bytesSent int64         // blob bytes, either way
 }
 
 func (f *fakeRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +49,19 @@ func (f *fakeRegistry) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/v2/":
 		w.WriteHeader(http.StatusOK)
 	case strings.HasPrefix(r.URL.Path, "/v2/test/app/manifests/"):
+		f.mu.Lock()
+		stall := f.stall
+		f.mu.Unlock()
+		if stall != nil {
+			select {
+			case <-stall:
+			case <-r.Context().Done():
+				return
+			}
+		}
+		f.mu.Lock()
+		f.manifests++
+		f.mu.Unlock()
 		w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
 		w.Write(f.manifest)
 	case strings.HasPrefix(r.URL.Path, "/v2/test/app/blobs/"):
