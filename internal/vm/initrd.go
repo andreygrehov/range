@@ -75,6 +75,14 @@ func Initrd(assets, guest string) (string, error) {
 			return "", err
 		}
 	}
+	// Modules a session loads only when it needs them, such as XFS, stay
+	// compressed: the kernel decompresses them as it loads them.
+	onDemand, _ := filepath.Glob(filepath.Join(assets, "modules", "*.ko.xz"))
+	for _, path := range onDemand {
+		if err := w.fileFrom("lib/modules/"+filepath.Base(path), 0o644, path); err != nil {
+			return "", err
+		}
+	}
 	w.trailer()
 	if w.err != nil {
 		return "", w.err

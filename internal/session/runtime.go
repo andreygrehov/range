@@ -85,6 +85,12 @@ type Options struct {
 	Env []string
 	// Ports are published on this machine while the session runs.
 	Ports []Port
+	// LoadFilesystem loads the kernel module of a filesystem the kernel
+	// cannot load by itself, as in Range's VM, which has no modprobe.
+	LoadFilesystem func(fsType string) error
+	// Tools is a static busybox, for an environment whose own programs are
+	// built for another architecture, or "".
+	Tools string
 	// DefaultCommand runs the environment's own command when Command is
 	// empty, instead of a shell.
 	DefaultCommand bool

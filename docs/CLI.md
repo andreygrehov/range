@@ -43,11 +43,21 @@ chunk into a filesystem.
 
 | Form | What it is |
 | --- | --- |
-| `s3://bucket/key`, `https://host/path`, a local path | A Range artifact or a raw EROFS or ext4 image |
+| `s3://bucket/key`, `https://host/path`, a local path | A Range artifact or a raw EROFS, ext4 or XFS image |
 | `python:3.12`, `ghcr.io/org/app:tag`, `name@sha256:...` | A container image, read from its registry. A bare name must not be a file here |
 | `docker://NAME`, `oci://NAME` | The same, spelled out |
 | `hf://org/name[@revision]` | A Hugging Face model repository, pinned to one commit |
 | `hf://datasets/org/name`, `hf://spaces/org/name` | A dataset or Space repository |
+| `ebs://snap-ID`, `ebs://ami-ID` | An EBS snapshot, or the root snapshot of an AMI, read with no volume and no instance |
+
+Range reads an EBS snapshot through the EBS direct APIs, a block of 512 KiB at a
+time, each checked against its SHA-256. It shows the snapshot's largest Linux
+partition. AWS serves only snapshots that the account owns or that another
+account shared with it. The credentials need `ebs:ListSnapshotBlocks` and
+`ebs:GetSnapshotBlock`, and `ec2:DescribeImages` for an AMI. A snapshot of a
+running machine opens as its disk held it, without the writes still in the
+filesystem's journal. When its programs target another architecture, Range's
+VM gives the shell Range's own tools, from busybox, at `/.range/bin`.
 
 Range reads a container image lazily. The first run of an image reads each layer
 once, checks it against its digest and indexes it: the offset of every file, and

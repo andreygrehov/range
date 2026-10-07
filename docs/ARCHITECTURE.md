@@ -72,6 +72,10 @@ a size and an identity, as for any artifact.
 Range keeps the layout of a container image on disk, named by its manifest digest.
 A later session loads it and reads no layer index until it reads that layer.
 
+An EBS snapshot is a backend as well. A read of its disk becomes requests for its
+blocks of 512 KiB through the EBS direct APIs. Range shows the largest Linux
+partition, and reads a block that the snapshot never wrote as zeros.
+
 ## Immutability
 
 An opened artifact is one immutable generation. Its cache key is a hash of URI,

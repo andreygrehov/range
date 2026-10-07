@@ -14,6 +14,7 @@ import (
 
 	"github.com/andreygrehov/range/internal/artifact"
 	"github.com/andreygrehov/range/internal/cache"
+	"github.com/andreygrehov/range/internal/ebs"
 	"github.com/andreygrehov/range/internal/hub"
 	"github.com/andreygrehov/range/internal/object"
 	"github.com/andreygrehov/range/internal/oci"
@@ -86,6 +87,10 @@ func Open(ctx context.Context, uri string, c Config) (*Reader, error) {
 		b = lazy
 	} else if hub.IsURI(uri) {
 		b = hub.New()
+	} else if ebs.IsURI(uri) {
+		if b, err = ebs.New(); err != nil {
+			return nil, err
+		}
 	} else if b, err = object.Open(uri, c.s3Endpoint); err != nil {
 		return nil, err
 	}

@@ -53,6 +53,7 @@ func TestInitrdHoldsWhatTheVMBootsFrom(t *testing.T) {
 	os.WriteFile(filepath.Join(assets, "modules", "order"), []byte("erofs\noverlay\n"), 0o644)
 	os.WriteFile(filepath.Join(assets, "modules", "erofs.ko"), []byte("erofs module"), 0o644)
 	os.WriteFile(filepath.Join(assets, "modules", "overlay.ko"), []byte("overlay"), 0o644)
+	os.WriteFile(filepath.Join(assets, "modules", "xfs.ko.xz"), []byte("xfs, compressed"), 0o644)
 	guest := filepath.Join(t.TempDir(), "range-linux")
 	os.WriteFile(guest, []byte("the guest binary, odd length"), 0o755)
 
@@ -76,6 +77,7 @@ func TestInitrdHoldsWhatTheVMBootsFrom(t *testing.T) {
 		"bin/range": "the guest binary, odd length", "bin/busybox": "busybox!",
 		"lib/modules/erofs.ko": "erofs module", "lib/modules/overlay.ko": "overlay",
 		"lib/modules/order": "erofs\noverlay\n", "etc/resolv.conf": "",
+		"lib/modules/xfs.ko.xz": "xfs, compressed",
 	} {
 		got, ok := entries[name]
 		if !ok || string(got.data) != want {

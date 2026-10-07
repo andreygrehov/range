@@ -40,6 +40,12 @@ The sky is blue because of a phenomenon called Rayleigh scattering,
 where blue light is scattered more than other colors.
 ```
 
+A shell in one of your AMIs or EBS snapshots, from a laptop, with no instance:
+
+```bash
+range shell ebs://ami-0123456789abcdef0
+```
+
 A 1 TB model, open in seconds:
 
 ```

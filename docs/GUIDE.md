@@ -73,6 +73,29 @@ Not supported yet: private registries (`docker login`), private or gated Hugging
 Face repositories, the image's `USER` (the workload runs as root), and GPUs
 inside the environment.
 
+## EBS snapshots and AMIs
+
+`range shell` opens an EBS snapshot, or the root disk of an AMI, from any machine
+with AWS credentials. It needs no volume, no instance and no network path to
+your VPC:
+
+```bash
+range shell ebs://ami-0123456789abcdef0
+range run ebs://snap-0123456789abcdef0 -- cat /etc/os-release
+```
+
+From a MacBook over wifi, a command in an Ubuntu 24.04 snapshot finished in 6.3 s
+and moved 34.6 MB of its 7.5 GB. Starting an instance from the AMI and running
+the same command over ssh took 21.9 s. A volume made from the snapshot,
+attached to an instance already running and mounted there, took 21.1 s.
+
+An x86 server's snapshot opens on an Apple silicon Mac too. Its programs cannot
+run there, so the shell and its commands are Range's own, from busybox, and the
+files are the snapshot's. Range reads ext4 and XFS, the filesystems of Ubuntu,
+Debian, Amazon Linux and RHEL. AWS serves only snapshots that your account owns
+or that another account shared with it. Copy a public one first with
+`aws ec2 copy-snapshot`.
+
 ## Platforms
 
 | Host | How it runs | Status |

@@ -29,11 +29,11 @@ import (
 // The archives scripts/vm-assets.sh builds, one for each architecture, and
 // where they are published.
 var archives = map[string]struct{ name, sha256 string }{
-	"arm64": {"range-vm-6.12.107+deb13-cloud-arm64.tar.gz", "28486894c7df92e27c42e37390fd56d4959696484e719479ddd061dd982ae07b"},
-	"amd64": {"range-vm-6.12.107+deb13-cloud-amd64.tar.gz", "9809d779b710a425f12c6cfaebb11033518768544b855c82e920ac737b2d09a3"},
+	"arm64": {"range-vm-6.12.107+deb13-cloud-arm64.tar.gz", "1b51f414ab68f75a738a9b510d3aebd9239f76b77541e23349b1b1c2d1307bf6"},
+	"amd64": {"range-vm-6.12.107+deb13-cloud-amd64.tar.gz", "0c984af3db385a2d32ae4b4fb24dfe3b02c9d4242f19e4ba6a16945a0c21c438"},
 }
 
-const releaseURL = "https://github.com/andreygrehov/range/releases/download/vm-2/"
+const releaseURL = "https://github.com/andreygrehov/range/releases/download/vm-3/"
 
 // Kernel is the kernel in an assets directory.
 func Kernel(assets string) string { return filepath.Join(assets, "kernel") }

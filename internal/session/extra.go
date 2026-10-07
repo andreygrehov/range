@@ -136,7 +136,7 @@ func makeDirIn(root, target string) (string, error) {
 
 // mountExtras mounts every attached Mount read-only inside the session root.
 // Each is unmounted before the root is, because cleanups run in reverse.
-func mountExtras(sess *Session, mounts []Mount) error {
+func mountExtras(sess *Session, mounts []Mount, load func(string) error) error {
 	for _, m := range mounts {
 		if err := SetReadahead(m.Device, MountReadahead); err != nil {
 			return fmt.Errorf("set readahead on %s: %w", m.Device, err)
@@ -145,11 +145,14 @@ func mountExtras(sess *Session, mounts []Mount) error {
 		if err != nil {
 			return fmt.Errorf("%s: %w", m.Target, err)
 		}
+		if err := loadFilesystem(load, fsType); err != nil {
+			return err
+		}
 		dir, err := makeDirIn(sess.root, m.Target)
 		if err != nil {
 			return err
 		}
-		if err := tool.Run("mount", "-t", fsType, "-o", "ro,nodev,nosuid", m.Device, dir); err != nil {
+		if err := tool.Run("mount", "-t", fsType, "-o", readOnly(fsType)+",nodev,nosuid", m.Device, dir); err != nil {
 			return fmt.Errorf("mount %s on %s: %w", m.Device, m.Target, err)
 		}
 		sess.Push(func() error {

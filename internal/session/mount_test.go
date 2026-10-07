@@ -29,12 +29,15 @@ func TestFilesystemOfReadsTheSuperblockMagic(t *testing.T) {
 	erofs, _ := os.ReadFile(image)
 	ext4 := make([]byte, 4096)
 	binary.LittleEndian.PutUint16(ext4[1024+56:], 0xef53)
+	xfs := make([]byte, 4096)
+	copy(xfs, "XFSB")
 	for name, tc := range map[string]struct {
 		img  []byte
 		want string
 	}{
 		"erofs": {erofs, "erofs"},
 		"ext4":  {ext4, "ext4"},
+		"xfs":   {xfs, "xfs"},
 		"zeros": {make([]byte, 4096), ""},
 		"short": {make([]byte, 100), ""},
 	} {

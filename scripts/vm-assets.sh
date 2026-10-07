@@ -39,6 +39,10 @@ modules="drivers/char/hw_random/virtio-rng drivers/block/virtio_blk lib/libcrc32
 fs/overlayfs/overlay net/core/failover drivers/net/net_failover drivers/net/virtio_net
 net/vmw_vsock/vsock net/vmw_vsock/vmw_vsock_virtio_transport_common net/vmw_vsock/vmw_vsock_virtio_transport"
 
+# Modules a session loads only when it needs them. They stay compressed, and
+# the kernel decompresses them as it loads them.
+on_demand="fs/xfs/xfs"
+
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 fetch() {
@@ -59,6 +63,9 @@ for m in $modules; do
   xz -dc "$work/deb/usr/lib/modules/$kernel_version/kernel/$m.ko.xz" > "$work/vm/modules/$(basename "$m").ko"
 done
 echo "$modules" | xargs -n1 basename > "$work/vm/modules/order"
+for m in $on_demand; do
+  cp "$work/deb/usr/lib/modules/$kernel_version/kernel/$m.ko.xz" "$work/vm/modules/"
+done
 echo "$kernel_version" > "$work/vm/kernel-version"
 
 mkdir -p "$out"

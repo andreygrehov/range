@@ -23,12 +23,15 @@ import (
 // fresh namespaces.
 const ChildCommand = "__child"
 
+// defaultPath is PATH in an environment that names none.
+const defaultPath = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
 // childEnv is the environment the shell starts with. Sorted so it is stable.
 func childEnv(cfg sessionConfig) []string {
 	// Defaults first; anything the image declares wins, since an image that
 	// ships a toolchain usually ships the PATH that finds it.
 	defaults := map[string]string{
-		"PATH":     "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+		"PATH":     defaultPath,
 		"HOME":     "/root",
 		"HOSTNAME": cfg.Hostname,
 	}
@@ -199,7 +202,7 @@ func lookPathInEnvironment(name string, env []string) (string, error) {
 		}
 	}
 	if search == "" {
-		search = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+		search = defaultPath
 	}
 	for _, dir := range strings.Split(search, ":") {
 		if dir == "" {
@@ -223,29 +226,37 @@ var elfMachines = map[uint16]string{
 // the kernel refuses the exec with ENOEXEC and the user is told only "exec
 // format error", which does not mention architecture at all.
 func checkExecutableArch(path string) error {
+	if _, err := os.Stat(path); err != nil {
+		return fmt.Errorf("%s is not present in this environment: %w", path, err)
+	}
+	name := executableArch(path)
+	if name == "" || name == runtime.GOARCH {
+		return nil
+	}
+	return fmt.Errorf("the programs here are built for linux/%s, and this machine runs linux/%s.\n"+
+		"  Build an artifact for this machine with range build --platform linux/%s, on any host.\n"+
+		"  A disk of another machine, such as an EBS snapshot, opens with Range's own tools in\n"+
+		"  Range's VM: RANGE_RUNTIME=kvm on Linux, or on a Mac",
+		name, runtime.GOARCH, runtime.GOARCH)
+}
+
+// executableArch names the architecture an ELF program is built for, or ""
+// for a script, or anything else this cannot tell.
+func executableArch(path string) string {
 	file, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("%s is not present in this environment: %w", path, err)
+		return ""
 	}
 	defer file.Close()
 	header := make([]byte, 20)
-	if _, err := io.ReadFull(file, header); err != nil {
-		return nil // too small to judge; let exec decide
-	}
-	if string(header[:4]) != "\x7fELF" {
-		return nil // a script, or something else exec can handle
+	if _, err := io.ReadFull(file, header); err != nil || string(header[:4]) != "\x7fELF" {
+		return ""
 	}
 	machine := binary.LittleEndian.Uint16(header[18:20])
 	if header[5] == 2 { // big-endian ELF
 		machine = binary.BigEndian.Uint16(header[18:20])
 	}
-	name, known := elfMachines[machine]
-	if !known || name == runtime.GOARCH {
-		return nil
-	}
-	return fmt.Errorf("this artifact was built for linux/%s but the environment runs linux/%s; "+
-		"rebuild it with range build --platform linux/%s, on any host",
-		name, runtime.GOARCH, runtime.GOARCH)
+	return elfMachines[machine]
 }
 
 // provideResolvConf gives the environment the host's resolver. An artifact has
