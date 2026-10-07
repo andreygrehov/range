@@ -28,6 +28,27 @@ it crosses NBD to the Mac. Giving Range's VM 16 CPUs did not change the warm num
 The `python:3.12` layers were only partly in the catalog that day, so Range indexed four of
 the seven itself in the cold runs.
 
+## A model on a GPU, against Docker
+
+Measured 7 October 2026 on an EC2 g4dn.xlarge (Tesla T4, driver 595.91.07) in
+us-east-1, with the AWS Deep Learning Base AMI for Ubuntu 24.04, Docker 29.8.2
+and nvidia-container-toolkit 1.20.1. The command answers one question with
+`llama-cli` from `ghcr.io/ggml-org/llama.cpp:light-cuda-b11206` and the Q4_K_M
+file of `unsloth/gemma-3-270m-it-GGUF`, with every layer on the GPU (`-ngl 99`).
+Docker pulls the image, `curl` downloads that one file, and `docker run --gpus all`
+runs it. Range runs `range run --gpus all` with the repository mounted.
+
+| Run | Docker | Range |
+| --- | ---: | ---: |
+| From nothing, median of three | 184.5 s | 143.1 s |
+| Again, image and model on the machine | 112.2 to 126.8 s | 3.1 s |
+
+From nothing, Range moved 428 MB. Both spend about 110 s of the first run in
+CUDA, which compiles the image's kernels for the T4. Docker compiles them again
+in every container. Range keeps them in `$RANGE_CACHE_DIR/cuda`, 75 MB here.
+Generation ran at 270 to 308 tokens a second with either.
+
+
 ## Starting Range's VM on Linux
 
 Measured 6 October 2026 on an EC2 c5.metal (Xeon, Ubuntu 24.04, QEMU 8.2), as a user in the

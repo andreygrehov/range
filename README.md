@@ -40,6 +40,15 @@ The sky is blue because of a phenomenon called Rayleigh scattering,
 where blue light is scattered more than other colors.
 ```
 
+The same model on an NVIDIA GPU, on Linux as root. Range keeps the kernels CUDA
+compiles for your GPU, so only the first run waits for them:
+
+```bash
+sudo range run --gpus all ghcr.io/ggml-org/llama.cpp:light-cuda-b11206 \
+  --mount hf://unsloth/gemma-3-270m-it-GGUF:/model -- \
+  llama-cli -m /model/gemma-3-270m-it-Q4_K_M.gguf -ngl 99 -st -p "Hi"
+```
+
 A shell in one of your AMIs or EBS snapshots, from a laptop, with no instance:
 
 ```bash

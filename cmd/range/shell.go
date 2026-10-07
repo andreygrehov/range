@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -48,7 +49,7 @@ func runSession(args []string, defaultCommand bool) error {
 		return err
 	}
 	var workdir, shellPath, upperDir, name, profileFlag, prefetchLimit, workload string
-	var keep bool
+	var keep, gpus bool
 	var mountSpecs, env []string
 	var ports []session.Port
 	r, c, command, err := openFromArgs("shell", args, func(fs *flag.FlagSet) {
@@ -75,6 +76,10 @@ func runSession(args []string, defaultCommand bool) error {
 		}
 		fs.Func("env", "KEY=VALUE, or KEY to pass this shell's value (repeatable)", setEnv)
 		fs.Func("e", "short for --env", setEnv)
+		fs.Func("gpus", "all: show this machine's NVIDIA GPUs inside the environment", func(v string) error {
+			gpus = true
+			return session.ParseGPUs(v)
+		})
 		fs.StringVar(&workload, "workload", profile.DefaultWorkload, "workload name, so profiles do not collide")
 		fs.StringVar(&workdir, "workdir", "", "working directory inside the environment")
 		fs.StringVar(&shellPath, "shell", "", "shell to execute")
@@ -104,6 +109,15 @@ func runSession(args []string, defaultCommand bool) error {
 	}
 	if workload == "" {
 		workload = profile.DefaultWorkload
+	}
+	var nvidia *session.NVIDIA
+	if gpus {
+		if host.Name() != "native" {
+			return errors.New(gpuHint())
+		}
+		if nvidia, err = session.FindNVIDIA(c.CacheDir); err != nil {
+			return err
+		}
 	}
 	r.Workload = workload
 
@@ -174,12 +188,13 @@ func runSession(args []string, defaultCommand bool) error {
 		Reader: r, Config: c, Session: sess, Workload: workload, Workdir: workdir,
 		ShellPath: shellPath, Command: command, UpperDir: upperDir, EnvName: name, Keep: keep,
 		Mounts: mounts, Dirs: dirs, Env: env, Ports: ports, DefaultCommand: defaultCommand,
+		NVIDIA: nvidia,
 	}
 	runErr := host.Run(ctx, opts, func() {
 		sess.State = session.StateReady
 		sess.ReadyIn = time.Since(started)
 		r.ReadyIn, r.SessionName = sess.ReadyIn, sess.Name
-		printEnvironmentBanner(sess, r, sess.Meta, profileHit, priorSessions, mounts, dirs)
+		printEnvironmentBanner(sess, r, sess.Meta, profileHit, priorSessions, mounts, dirs, nvidia)
 	})
 
 	// Record what this session needed before tearing anything down.
@@ -231,7 +246,7 @@ func bannerLine(format string, args ...any) {
 	fmt.Printf(format+ending, args...)
 }
 
-func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environment.Metadata, profileHit bool, priorSessions int64, mounts []session.Mount, dirs []session.Dir) {
+func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environment.Metadata, profileHit bool, priorSessions int64, mounts []session.Mount, dirs []session.Dir, nvidia *session.NVIDIA) {
 	bannerLine("")
 	bannerLine("Range environment")
 	bannerLine("  Artifact          %s", r.Ident.URI)
@@ -246,6 +261,9 @@ func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environm
 		bannerLine("  Shared            %s at %s", d.Path, d.Target)
 	}
 	bannerLine("  Runtime           %s/%s", runtime.GOOS, runtime.GOARCH)
+	if nvidia != nil {
+		bannerLine("  GPUs              %d NVIDIA, driver %s", nvidia.GPUs, nvidia.Version)
+	}
 	bannerLine("  Workload          %s", r.Workload)
 	if profileHit {
 		bannerLine("  Profile           %d prior sessions", priorSessions)
@@ -312,4 +330,13 @@ func catalogProfile(ctx context.Context, r *core.Reader, c core.Config, workload
 		return profile.Profile{}, false
 	}
 	return profile.Load(c.CacheDir, r.Ident, r.BlockSize, workload)
+}
+
+// gpuHint says how to get GPUs where the runtime cannot show them: only the
+// native runtime can, since Range's VMs have no GPU.
+func gpuHint() string {
+	if runtime.GOOS == "linux" {
+		return "--gpus needs the native runtime, which runs as root: re-run with sudo"
+	}
+	return "--gpus needs Linux: Range's VM on a Mac has no GPU"
 }

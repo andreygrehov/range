@@ -54,6 +54,9 @@ func childEnv(cfg sessionConfig) []string {
 	for _, key := range keys {
 		env = append(env, key+"="+cfg.Environment[key])
 	}
+	if cfg.NVIDIA != nil {
+		env = withNVIDIAEnv(env)
+	}
 	return env
 }
 
@@ -101,6 +104,11 @@ func RunChild(args []string) error {
 	// refusing the shell over.
 	_ = tool.Run("mount", "-t", "sysfs", "sysfs", filepath.Join(cfg.Root, "sys"))
 	provideResolvConf(cfg.Root)
+	if cfg.NVIDIA != nil {
+		if err := provideNVIDIA(cfg.Root, cfg.NVIDIA); err != nil {
+			return err
+		}
+	}
 	if cfg.Hostname != "" {
 		_ = tool.Run("hostname", cfg.Hostname)
 	}

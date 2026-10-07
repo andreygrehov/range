@@ -147,6 +147,7 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 	cfg := sessionConfig{
 		Root: sess.root, Shell: meta.Shell, Workdir: meta.Workdir,
 		Hostname: meta.Hostname, Environment: meta.Environment, Command: command,
+		NVIDIA: opts.NVIDIA,
 	}
 	encoded, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

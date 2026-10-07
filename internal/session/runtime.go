@@ -91,6 +91,9 @@ type Options struct {
 	// Tools is a static busybox, for an environment whose own programs are
 	// built for another architecture, or "".
 	Tools string
+	// NVIDIA is the host's NVIDIA driver, shown inside the environment, or
+	// nil. Only the native runtime takes it.
+	NVIDIA *NVIDIA
 	// DefaultCommand runs the environment's own command when Command is
 	// empty, instead of a shell.
 	DefaultCommand bool

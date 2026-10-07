@@ -23,6 +23,7 @@ type sessionConfig struct {
 	Hostname    string            `json:"hostname"`
 	Environment map[string]string `json:"environment"`
 	Command     []string          `json:"command,omitempty"`
+	NVIDIA      *NVIDIA           `json:"nvidia,omitempty"`
 }
 
 // State is where a session is in its life, as shown by range stats.

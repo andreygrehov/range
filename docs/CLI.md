@@ -129,6 +129,7 @@ ships.
 | `--mount SOURCE:/path` | none | Show a remote source read-only at `/path`, e.g. `hf://org/model:/model`, or a directory of this machine read-write, e.g. `.:/work`. Repeatable |
 | `-e`, `--env KEY=VALUE` | none | Set a variable over the image's. `-e KEY` passes this shell's value, and leaves it out when it is unset. Repeatable |
 | `-p`, `--publish [IP:]HOSTPORT:PORT` | none | Publish a port of the environment on this machine, on `127.0.0.1` unless `IP` says otherwise. Repeatable |
+| `--gpus all` | none | Show this machine's NVIDIA GPUs inside the environment. Linux, as root |
 
 In Range's VM on a Mac, a published port reaches a server inside whether it
 listens on `0.0.0.0` or only on `127.0.0.1`. On Linux and in Lima, the
@@ -144,6 +145,15 @@ range shell s3://bucket/dev.range --workload go-test -- go test ./...
 
 This requires root, a kernel with the `nbd` module, which range loads, and
 `mount`, `umount`, `unshare` from util-linux. Exports are read-only. Writes land in a local overlay.
+
+With `--gpus all`, the environment gets the GPUs' device nodes and the host
+driver's own libraries and tools, such as `libcuda.so.1` and `nvidia-smi`, as
+nvidia-container-toolkit gives them to a container. Range shows them read-only at
+`/usr/local/nvidia`, where CUDA images look for them, and adds its `lib64`
+and `bin` to the end of `LD_LIBRARY_PATH` and `PATH`. CUDA keeps the kernels it
+compiles for this GPU in `$RANGE_CACHE_DIR/cuda`, up to 4 GiB, so only the first
+session compiles them. An image or `-e` that sets `CUDA_CACHE_PATH` decides
+instead. `CUDA_VISIBLE_DEVICES` picks among the GPUs. Range's VM has no GPU.
 
 A container image's entrypoint directory joins `PATH` when it is not there
 already, so `llama-cli` in `ghcr.io/ggml-org/llama.cpp:light-b11206` runs by name.

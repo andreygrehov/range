@@ -69,9 +69,24 @@ the commit its revision named at open. `--mount` puts one inside an environment.
 `du` and `ls` read only metadata, so they move nothing. A program that reads a
 whole model file still downloads that file, once.
 
+`--gpus all` shows this machine's NVIDIA GPUs inside the environment, on Linux
+as root, with the same flag as `docker run --gpus all`:
+
+```bash
+sudo range run --gpus all ghcr.io/ggml-org/llama.cpp:light-cuda-b11206 \
+  --mount hf://unsloth/gemma-3-270m-it-GGUF:/model -- \
+  llama-cli -m /model/gemma-3-270m-it-Q4_K_M.gguf -ngl 99 -st -p "Why is the sky blue?"
+```
+
+Range keeps CUDA's compiled kernels between sessions. On an EC2 g4dn.xlarge
+(Tesla T4), this command took 136.7 s the first time and 3.1 s after that. With
+Docker and nvidia-container-toolkit, every run took 112 to 127 s, image and model
+already on the machine: CUDA compiled the image's kernels for the T4 again each
+time, because the container's cache went with the container.
+
 Not supported yet: private registries (`docker login`), private or gated Hugging
-Face repositories, the image's `USER` (the workload runs as root), and GPUs
-inside the environment.
+Face repositories, the image's `USER` (the workload runs as root), and GPUs in
+Range's VM, on a Mac or on Linux without root.
 
 ## EBS snapshots and AMIs
 
