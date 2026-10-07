@@ -137,21 +137,23 @@ func runVMGuest() (int, error) {
 		<-proceed
 	})
 	cleanupErr := sess.Cleanup()
-	streams.finish()
 
+	// Say what failed while the host still reads standard error: once the
+	// streams are finished, nothing printed here reaches it.
 	code := 0
 	var status session.ExitStatus
 	switch {
 	case errors.As(runErr, &status):
-		code, runErr = int(status), nil
+		code = int(status)
 	case runErr != nil:
 		code = 1
+		fmt.Fprintf(os.Stderr, "range: %v\n", runErr)
+	case cleanupErr != nil:
+		fmt.Fprintf(os.Stderr, "range: %v\n", cleanupErr)
 	}
+	streams.finish()
 	fmt.Fprintf(control, "exit %d\n", code)
-	if runErr == nil && cleanupErr != nil {
-		runErr = cleanupErr
-	}
-	return code, runErr
+	return code, nil
 }
 
 // relayPort takes the host's connections for a published port and relays
