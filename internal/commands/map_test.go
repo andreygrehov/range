@@ -70,6 +70,50 @@ func TestBuild(t *testing.T) {
 	}
 }
 
+func TestNamedFor(t *testing.T) {
+	for _, tc := range []struct {
+		command, repo string
+		want          int
+	}{
+		{"python", "python", exactName},
+		{"python3.12", "python", exactName},
+		{"terraform", "hashicorp/terraform", exactName},
+		{"redis-cli", "redis", family},
+		{"pg_dump", "pg", family},
+		{"erl", "erlang", family},
+		{"go", "golang", family},
+		// Another tool whose name starts with the command's.
+		{"cargo", "lukemathwalker/cargo-chef", notNamed},
+		{"terraform", "ljfranklin/terraform-resource", notNamed},
+		{"node", "nodered/node-red", notNamed},
+		{"pip", "python", notNamed},
+	} {
+		if got := namedFor(tc.command, tc.repo, false); got != tc.want {
+			t.Errorf("namedFor(%s, %s) = %d, want %d", tc.command, tc.repo, got, tc.want)
+		}
+	}
+	if namedFor("jq", "ghcr.io/jqlang/jq", true) != exactName || namedFor("ffmpegwrapper.sh", "linuxserver/ffmpeg", true) != exactName {
+		t.Error("an entrypoint is the image's own command")
+	}
+}
+
+func TestAHomeRanksWhatItBrings(t *testing.T) {
+	images := []oci.ImageCommands{
+		image("texlive/texlive:latest", "dt", map[string]int{"pdflatex": 1, "bibtex": 1}),
+		image("kasmweb/desktop:1", "dk", map[string]int{"pdflatex": 1, "bibtex": 1}),
+	}
+	pulls := map[string]int64{"kasmweb/desktop": 9e9, "texlive/texlive": 1e6}
+	if got := repos(Build(images, pulls, Pins{})["pdflatex"]); got != "[kasmweb/desktop texlive/texlive]" {
+		t.Fatalf("without a home, pulls decide: %s", got)
+	}
+	m := Build(images, pulls, Pins{Home: map[string]bool{"texlive/texlive": true}})
+	for _, c := range []string{"pdflatex", "bibtex"} {
+		if got := repos(m[c]); got != "[texlive/texlive kasmweb/desktop]" {
+			t.Errorf("%s with texlive as its home: %s", c, got)
+		}
+	}
+}
+
 func TestRepository(t *testing.T) {
 	for in, want := range map[string]string{
 		"python:3.12": "python", "ghcr.io/org/app:1.2": "ghcr.io/org/app",

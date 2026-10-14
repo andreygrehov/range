@@ -35,10 +35,15 @@ const maxOwners = 8
 var validName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 
 // Pins are decisions people make where the data cannot: which image a
-// command runs from, and which commands the map leaves out.
+// command runs from, which repositories are the home of what they bring, and
+// which commands the map leaves out.
 type Pins struct {
 	// Repo maps a command to the repository that runs it first.
 	Repo map[string]string
+	// Home lists repositories that are the home of every command they
+	// bring in their own layers, as texlive/texlive is of pdflatex, bibtex
+	// and hundreds more, none of them named for it.
+	Home map[string]bool
 	// Skip lists commands the map leaves out, such as daemons.
 	Skip map[string]bool
 }
@@ -52,14 +57,18 @@ type Pins struct {
 //  2. A layer belongs to the repository of the smallest image that has it,
 //     the image it was built for. An image built on another inherits its
 //     layers, and their commands stay its parent's.
-//  3. A repository named for a command ranks first: python for python3.12,
-//     erlang for erl, and an image whose entrypoint is the command.
+//  3. A repository named for a command ranks first: python for python3 and
+//     python3.12, and an image whose entrypoint is the command. Next come
+//     the repository's family, redis for redis-cli, and its short form,
+//     erlang for erl. A longer name is another tool: cargo-chef is not
+//     cargo's.
 //  4. A command in the same layer as one of those ranks next: pip, which
 //     comes with python3.
 //  5. Popularity breaks ties within those. For any other command, the
 //     smallest image that has it wins: it costs the least to fetch.
 //
-// Pins then put a chosen repository first and leave skipped commands out.
+// Pins then rank a home repository as a command's family, put a chosen
+// repository first, and leave skipped commands out.
 func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 	type parentOf struct {
 		layers   int
@@ -83,7 +92,7 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 			entrypoints[img.Entrypoint][repo] = true
 		}
 	}
-	named := func(command, repo string) bool { return namedFor(command, repo, entrypoints[command][repo]) }
+	named := func(command, repo string) int { return namedFor(command, repo, entrypoints[command][repo]) }
 
 	// A layer that brings a command named for its repository is that
 	// repository's own.
@@ -91,7 +100,7 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 	for _, img := range images {
 		repo, inOS := Repository(img.Image), set(img.OS)
 		for command, layer := range img.Commands {
-			if !inOS[command] && named(command, repo) {
+			if !inOS[command] && named(command, repo) < notNamed {
 				own[img.Layers[layer]] = repo
 			}
 		}
@@ -109,12 +118,14 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 				continue
 			}
 			d := img.Layers[layer]
-			repo, tier := parent[d].repo, 2
+			repo, tier := parent[d].repo, otherTier
 			if o, ok := own[d]; ok {
-				repo, tier = o, 1
+				repo, tier = o, ownLayer
 			}
-			if named(command, repo) {
-				tier = 0
+			if n := named(command, repo); n < notNamed {
+				tier = n
+			} else if pins.Home[repo] {
+				tier = family
 			}
 			r := rankOf(tier, pulls[repo], parent[d].layers)
 			if found[command] == nil {
@@ -159,18 +170,37 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 	return m
 }
 
-// namedFor reports whether a repository is named for a command: an exact
-// name, a name and a version (python for python3.12), a shortened name
-// (erlang for erl), or an image whose entrypoint is the command.
-func namedFor(command, repo string, entrypoint bool) bool {
+// The tiers of a repository for a command, best first.
+const (
+	exactName = iota // python for python3.12; an entrypoint
+	family           // redis for redis-cli; erlang for erl
+	notNamed
+	ownLayer  = notNamed // the command came with one named for the repository
+	otherTier = notNamed + 1
+)
+
+// namedFor says how a repository is named for a command: by its exact name,
+// with a version (python for python3.12), or as its entrypoint; or as its
+// family (redis for redis-cli) or a short form of it (erlang for erl). A
+// repository whose name adds a word, as cargo-chef does to cargo, is another
+// tool, and notNamed.
+func namedFor(command, repo string, entrypoint bool) int {
 	name := repo[strings.LastIndex(repo, "/")+1:]
 	if command == name || entrypoint {
-		return true
+		return exactName
 	}
-	if rest, ok := strings.CutPrefix(command, name); ok && strings.Trim(rest, "0123456789.-") == "" {
-		return true
+	if rest, ok := strings.CutPrefix(command, name); ok {
+		if strings.Trim(rest, "0123456789.") == "" {
+			return exactName
+		}
+		if rest[0] == '-' || rest[0] == '_' {
+			return family
+		}
 	}
-	return len(command) >= 2 && strings.HasPrefix(name, command)
+	if rest, ok := strings.CutPrefix(name, command); ok && len(command) >= 2 && strings.IndexAny(rest, "-_.") < 0 {
+		return family
+	}
+	return notNamed
 }
 
 // Repository is an image's name without its tag or digest:
@@ -187,14 +217,14 @@ func Repository(image string) string {
 
 // rank orders the repositories that hold a command. Lower is better.
 type rank struct {
-	tier int // 0: named for the command, 1: in its own layer, 2: any other
-	// For tiers 0 and 1, the more pulls the better, then nothing. For tier
-	// 2, the fewer layers the better, then the more pulls.
+	tier int // exactName, family, ownLayer or otherTier
+	// For the named tiers and ownLayer, the more pulls the better. For
+	// otherTier, the fewer layers the better, then the more pulls.
 	first, then int64
 }
 
 func rankOf(tier int, pulls int64, layers int) rank {
-	if tier < 2 {
+	if tier < otherTier {
 		return rank{tier, -pulls, 0}
 	}
 	return rank{tier, int64(layers), -pulls}

@@ -76,7 +76,7 @@ func commandsBuild(args []string) error {
 	list := fs.String("list", "", "file of images, one per line, as the catalog's lists")
 	platforms := fs.String("platform", "linux/amd64,linux/arm64", "platforms to read, comma separated")
 	pullsFile := fs.String("pulls", "", "file of REPOSITORY<TAB>PULLS, from Docker Hub")
-	pinsFile := fs.String("pins", "", "file of COMMAND REPOSITORY lines, and !COMMAND for one to leave out")
+	pinsFile := fs.String("pins", "", "file of COMMAND REPOSITORY lines, * REPOSITORY for a home, !COMMAND to leave out")
 	digits := fs.Int("digits", 2, "hex digits that pick a command's shard")
 	out := fs.String("o", "commands", "directory to write the map into, as the catalog serves it")
 	cache := fs.String("cache", "", "directory to keep layer indexes in (default: a temporary one)")
@@ -250,10 +250,11 @@ func readPulls(path string) (map[string]int64, error) {
 	return pulls, s.Err()
 }
 
-// readPins reads "COMMAND REPOSITORY" lines, and "!COMMAND" for a command to
-// leave out, with # comments.
+// readPins reads "COMMAND REPOSITORY" lines, "* REPOSITORY" for the home of
+// what a repository brings, and "!COMMAND" for a command to leave out, with
+// # comments.
 func readPins(path string) (commands.Pins, error) {
-	pins := commands.Pins{Repo: map[string]string{}, Skip: map[string]bool{}}
+	pins := commands.Pins{Repo: map[string]string{}, Home: map[string]bool{}, Skip: map[string]bool{}}
 	if path == "" {
 		return pins, nil
 	}
@@ -270,10 +271,12 @@ func readPins(path string) (commands.Pins, error) {
 		case len(fields) == 0:
 		case len(fields) == 1 && strings.HasPrefix(fields[0], "!"):
 			pins.Skip[fields[0][1:]] = true
+		case len(fields) == 2 && fields[0] == "*":
+			pins.Home[fields[1]] = true
 		case len(fields) == 2:
 			pins.Repo[fields[0]] = fields[1]
 		default:
-			return pins, fmt.Errorf("%s:%d: want COMMAND REPOSITORY or !COMMAND", path, n)
+			return pins, fmt.Errorf("%s:%d: want COMMAND REPOSITORY, * REPOSITORY or !COMMAND", path, n)
 		}
 	}
 	return pins, s.Err()
