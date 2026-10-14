@@ -153,6 +153,11 @@ func resolve(ctx context.Context, image string, want Platform) (resolved, error)
 	return resolveFrom(ctx, image, ref, want)
 }
 
+// PlatformError says that an image is not built for the platform asked for.
+type PlatformError struct{ msg string }
+
+func (e *PlatformError) Error() string { return e.msg }
+
 func resolveFrom(ctx context.Context, image string, ref Reference, want Platform) (resolved, error) {
 	client := newClient(ref)
 	client.authenticate(ctx)
@@ -170,7 +175,7 @@ func resolveFrom(ctx context.Context, image string, ref Reference, want Platform
 			}
 		}
 		if chosen == "" {
-			return resolved{}, fmt.Errorf("%s has no %s image", image, want)
+			return resolved{}, &PlatformError{fmt.Sprintf("%s has no %s image", image, want)}
 		}
 		if manifest, digest, body, err = client.manifestWithDigest(ctx, chosen); err != nil {
 			return resolved{}, err
@@ -186,8 +191,8 @@ func resolveFrom(ctx context.Context, image string, ref Reference, want Platform
 	// A single-platform image has no index to choose from; its config says
 	// what it was built for.
 	if config.Architecture != "" && !want.matches(config.OS, config.Architecture, config.Variant) {
-		return resolved{}, fmt.Errorf("%s is a %s/%s image, not %s; pick a tag built for %s",
-			image, config.OS, config.Architecture, want, want)
+		return resolved{}, &PlatformError{fmt.Sprintf("%s is a %s/%s image, not %s; pick a tag built for %s",
+			image, config.OS, config.Architecture, want, want)}
 	}
 	return resolved{client: client, ref: ref, manifest: manifest, digest: digest, config: config,
 		manifestBody: body, configBody: configBody}, nil

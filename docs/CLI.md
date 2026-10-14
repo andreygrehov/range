@@ -21,6 +21,8 @@ range run <uri> --mount .:/work -- make           # with this directory inside, 
 range run <uri> [-- COMMAND...]           # run one command inside it
 range mount <uri> <dir>                   # mount it read-only on this Linux host
 range index IMAGE... [-o DIR]             # index images for a catalog, no root needed
+range commands which COMMAND              # the images that hold a command, best first
+range commands build --list FILE -o DIR   # build the command map for a catalog
 range serve <uri> [--addr HOST:PORT]      # expose it as a local URL, by range
 range inspect <uri>                       # identity, size, cache state
 ```

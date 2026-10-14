@@ -18,8 +18,8 @@ import (
 // points Range at another catalog, and "off" turns the catalog off.
 const DefaultCatalog = "https://github.com/andreygrehov/range-index/releases/download"
 
-// catalogURL is the catalog in use, or "" when it is off.
-func catalogURL() string {
+// CatalogURL is the catalog in use, or "" when it is off.
+func CatalogURL() string {
 	switch v := strings.TrimRight(os.Getenv("RANGE_INDEX_URL"), "/"); v {
 	case "":
 		return DefaultCatalog
@@ -53,7 +53,7 @@ func catalogClient() *http.Client {
 // catalog can only save Range the work of building an index, never change
 // which bytes it reads.
 func fetchIndex(ctx context.Context, digest string, size int64, path string) (*layerIndex, error) {
-	base, name := catalogURL(), catalogName(digest)
+	base, name := CatalogURL(), catalogName(digest)
 	if base == "" || name == "" {
 		return nil, errNotInCatalog
 	}
@@ -102,7 +102,7 @@ func fetchIndex(ctx context.Context, digest string, size int64, path string) (*l
 
 // inCatalog reports whether the catalog already holds a layer's index.
 func inCatalog(ctx context.Context, digest string) bool {
-	base, name := catalogURL(), catalogName(digest)
+	base, name := CatalogURL(), catalogName(digest)
 	if base == "" || name == "" {
 		return false
 	}
@@ -175,7 +175,7 @@ func CatalogProfileName(etag string) string {
 // FetchCatalogProfile returns the startup profile the catalog holds for an
 // image, by the identity Range gave it.
 func FetchCatalogProfile(ctx context.Context, etag string) ([]byte, error) {
-	base, name := catalogURL(), CatalogProfileName(etag)
+	base, name := CatalogURL(), CatalogProfileName(etag)
 	if base == "" || name == "" {
 		return nil, errNotInCatalog
 	}

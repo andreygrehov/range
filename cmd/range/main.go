@@ -85,6 +85,8 @@ func run(args []string) error {
 		return commandShell(args[1:])
 	case "run":
 		return commandRun(args[1:])
+	case "commands":
+		return commandCommands(args[1:])
 	case "publish":
 		return commandPublish(args[1:])
 	case "inspect":
