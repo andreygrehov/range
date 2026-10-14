@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,12 +17,18 @@ import (
 // a directory. A shard, named by its content, is fetched once. The root is
 // fetched again when it is older than MaxAge, and a client that cannot reach
 // the catalog keeps using the root it has.
+//
+// With Keys, a root must carry the signature of one of them. A fresh root
+// built before the one kept is refused, so a mirror cannot hand back an old
+// map, and a root built longer than MaxStale ago is not used.
 type Client struct {
-	Base   string // the catalog: https://github.com/andreygrehov/range-index/releases/download
-	Dir    string // where the root and shards are kept
-	MaxAge time.Duration
-	HTTP   *http.Client
-	Now    func() time.Time
+	Base     string // the catalog: https://github.com/andreygrehov/range-index/releases/download
+	Dir      string // where the root and shards are kept
+	MaxAge   time.Duration
+	MaxStale time.Duration // 0: no limit
+	Keys     map[string]ed25519.PublicKey
+	HTTP     *http.Client
+	Now      func() time.Time
 }
 
 // ErrUnknown says that no image in the map holds a command.
@@ -50,40 +57,64 @@ func (c *Client) Lookup(ctx context.Context, command string) ([]Owner, error) {
 
 func (c *Client) root(ctx context.Context) (Root, error) {
 	path := filepath.Join(c.Dir, "commands.json")
-	kept, keptErr := readRoot(path)
+	kept, keptErr := c.readRoot(path)
 	if keptErr == nil {
 		if info, err := os.Stat(path); err == nil && c.now().Sub(info.ModTime()) < c.MaxAge {
-			return kept, nil
+			return kept, c.fresh(kept)
 		}
 	}
 	data, err := c.get(ctx, RootName)
-	if err == nil {
+	if err != nil {
+		err = fmt.Errorf("commands: the catalog's map: %w", err)
+	} else {
 		var fresh Root
-		if err = json.Unmarshal(data, &fresh); err == nil {
-			if err = check(fresh); err == nil {
+		if fresh, err = c.parseRoot(data); err == nil {
+			if keptErr == nil && fresh.Built.Before(kept.Built) {
+				err = fmt.Errorf("commands: the catalog's map was built %s, before the one kept here", fresh.Built.Format(time.RFC3339))
+			} else {
 				writeFile(path, data) // kept only to save the next fetch
-				return fresh, nil
+				return fresh, c.fresh(fresh)
 			}
 		}
 	}
 	if keptErr == nil {
 		// The catalog is out of reach or broken: the map kept here still
 		// answers, a day or a week old.
-		return kept, nil
+		return kept, c.fresh(kept)
 	}
-	return Root{}, fmt.Errorf("commands: the catalog's map: %w", err)
+	return Root{}, err
 }
 
-func readRoot(path string) (Root, error) {
+func (c *Client) readRoot(path string) (Root, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return Root{}, err
+	}
+	return c.parseRoot(data)
+}
+
+// parseRoot checks a root's signature, when the client has keys, then reads
+// it.
+func (c *Client) parseRoot(data []byte) (Root, error) {
+	if len(c.Keys) > 0 {
+		if _, err := Verify(data, c.Keys); err != nil {
+			return Root{}, err
+		}
 	}
 	var r Root
 	if err := json.Unmarshal(data, &r); err != nil {
 		return Root{}, err
 	}
 	return r, check(r)
+}
+
+// fresh refuses a root built longer than MaxStale ago: a catalog that stopped
+// building, or someone who keeps an old one in place.
+func (c *Client) fresh(r Root) error {
+	if age := c.now().Sub(r.Built); c.MaxStale > 0 && age > c.MaxStale {
+		return fmt.Errorf("commands: the catalog's map is %d days old; update it, or set RANGE_INDEX_URL", int(age.Hours()/24))
+	}
+	return nil
 }
 
 // check refuses a root this Range cannot read.

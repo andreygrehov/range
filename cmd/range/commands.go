@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/ed25519"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -34,8 +35,10 @@ func commandCommands(args []string) error {
 		return commandsWhich(args[1:])
 	case "build":
 		return commandsBuild(args[1:])
+	case "sign":
+		return commandsSign(args[1:])
 	}
-	return fmt.Errorf("commands: no subcommand %q; want which or build", args[0])
+	return fmt.Errorf("commands: no subcommand %q; want which, build or sign", args[0])
 }
 
 // commandsDir is where Range keeps what it knows of command maps.
@@ -59,11 +62,76 @@ func commandsClient() (*commands.Client, error) {
 	if base == "" {
 		return nil, errors.New("commands: the catalog is off (RANGE_INDEX_URL)")
 	}
+	keys, err := mapKeys()
+	if err != nil {
+		return nil, err
+	}
 	sum := sha256.Sum256([]byte(base))
 	return &commands.Client{
-		Base: base, Dir: filepath.Join(dir, hex.EncodeToString(sum[:6])), MaxAge: 24 * time.Hour,
+		Base: base, Dir: filepath.Join(dir, hex.EncodeToString(sum[:6])),
+		MaxAge: 24 * time.Hour, MaxStale: 30 * 24 * time.Hour, Keys: keys,
 		HTTP: &http.Client{Timeout: 30 * time.Second},
 	}, nil
+}
+
+// mapKeys are the keys a catalog's map must be signed with: the public
+// catalog's, and those in RANGE_MAP_KEYS, base64 and comma separated, for a
+// catalog of one's own. RANGE_MAP_KEYS=off reads a map unsigned.
+func mapKeys() (map[string]ed25519.PublicKey, error) {
+	env := os.Getenv("RANGE_MAP_KEYS")
+	if env == "off" {
+		return nil, nil
+	}
+	keys := map[string]ed25519.PublicKey{}
+	for _, encoded := range commands.CatalogKeys {
+		key, err := commands.ParsePublicKey(encoded)
+		if err != nil {
+			return nil, err
+		}
+		keys[commands.KeyID(key)] = key
+	}
+	for _, encoded := range strings.Split(env, ",") {
+		if strings.TrimSpace(encoded) == "" {
+			continue
+		}
+		key, err := commands.ParsePublicKey(encoded)
+		if err != nil {
+			return nil, fmt.Errorf("RANGE_MAP_KEYS: %w", err)
+		}
+		keys[commands.KeyID(key)] = key
+	}
+	return keys, nil
+}
+
+// commandsSign signs a map's root, as the catalog does after it builds one,
+// with the base64 Ed25519 seed in an environment variable.
+func commandsSign(args []string) error {
+	fs := flag.NewFlagSet("commands sign", flag.ContinueOnError)
+	keyEnv := fs.String("key-env", "MAP_SIGNING_KEY", "environment variable that holds the base64 Ed25519 seed")
+	flags, files := splitArgs(fs, args)
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	if len(files) != 1 {
+		return errors.New("commands sign: want range commands sign [--key-env NAME] ROOT")
+	}
+	key, err := commands.ParsePrivateKey(os.Getenv(*keyEnv))
+	if err != nil {
+		return fmt.Errorf("%s: %w", *keyEnv, err)
+	}
+	root, err := os.ReadFile(files[0])
+	if err != nil {
+		return err
+	}
+	signed, err := commands.Sign(root, key)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(files[0], signed, 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("signed %s with key %s\n", files[0], commands.KeyID(key.Public().(ed25519.PublicKey)))
+	return nil
 }
 
 func commandsWhich(args []string) error {

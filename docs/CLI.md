@@ -91,6 +91,11 @@ Range asks once, at a terminal. `eval "$(range init zsh)"` in `~/.zshrc` sends
 every missing command to `range x`, so `pdflatex` works by its name. A command
 this machine has always runs as before.
 
+Range trusts the command map only when the catalog's key signed it, and does
+not use a map built more than 30 days ago. For a catalog of your own, give its
+keys in `RANGE_MAP_KEYS`, base64 and comma separated, and sign its map with
+`range commands sign`. `RANGE_MAP_KEYS=off` reads a map unsigned.
+
 Range signs in to a registry with what `docker login` stored: the
 configuration in `$DOCKER_CONFIG` or `~/.docker`, its credential helpers, such
 as `ecr-login`, and its credential store, such as `osxkeychain` or `desktop`.
