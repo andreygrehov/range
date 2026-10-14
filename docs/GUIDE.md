@@ -84,8 +84,8 @@ Docker and nvidia-container-toolkit, every run took 112 to 127 s, image and mode
 already on the machine: CUDA compiled the image's kernels for the T4 again each
 time, because the container's cache went with the container.
 
-Not supported yet: private registries (`docker login`), private or gated Hugging
-Face repositories, the image's `USER` (the workload runs as root), and GPUs in
+A private image works after `docker login`: Range signs in with what Docker
+stored. Not supported yet: private or gated Hugging Face repositories, the image's `USER` (the workload runs as root), and GPUs in
 Range's VM, on a Mac or on Linux without root.
 
 ## EBS snapshots and AMIs

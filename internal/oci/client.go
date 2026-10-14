@@ -26,6 +26,12 @@ type client struct {
 
 	mu    sync.Mutex
 	token string
+	// basic signs every request, for a registry that takes credentials
+	// directly rather than through a token service.
+	basic *credential
+	// signedIn says the token or basic carries credentials. anonymous says
+	// the registry refused them, and Range reads it without them.
+	signedIn, anonymous bool
 }
 
 // transport is how clients reach registries; tests point it at a fake one.
@@ -35,22 +41,39 @@ func newClient(ref Reference) *client {
 	return &client{client: &http.Client{Transport: transport, Timeout: 10 * time.Minute}, ref: ref}
 }
 
-// authenticate performs the anonymous token dance registries use for public
-// images. A registry that needs no token simply fails here and is used plain.
+// authenticate gets a token from the registry's token service: with the
+// credentials Docker's configuration holds for the registry, or anonymously
+// for a public image. A registry that needs no token simply fails here and is
+// used plain, and one that takes credentials directly gets them on each
+// request.
 func (c *client) authenticate(ctx context.Context) {
+	c.mu.Lock()
+	anonymous := c.anonymous
+	c.mu.Unlock()
+	var creds *credential
+	if !anonymous {
+		creds = credentialsFor(c.ref.registry)
+	}
 	// Docker Hub's token service is named differently from its registry host.
 	service := c.ref.registry
 	realm := "https://auth.docker.io/token"
 	if c.ref.registry == "registry-1.docker.io" {
 		service = "registry.docker.io"
 	} else {
-		probe, err := c.do(ctx, http.MethodGet,
-			fmt.Sprintf("https://%s/v2/", c.ref.registry), nil)
+		// The probe expects a 401 that names the token service: it goes
+		// plain, past the retry that a refused request gets.
+		probe, err := c.tokenRequest(ctx, fmt.Sprintf("https://%s/v2/", c.ref.registry), nil)
 		if err != nil {
 			return
 		}
 		probe.Body.Close()
 		header := probe.Header.Get("Www-Authenticate")
+		if strings.HasPrefix(header, "Basic ") && creds != nil {
+			c.mu.Lock()
+			c.basic, c.signedIn = creds, true
+			c.mu.Unlock()
+			return
+		}
 		if !strings.HasPrefix(header, "Bearer ") {
 			return
 		}
@@ -66,7 +89,18 @@ func (c *client) authenticate(ctx context.Context) {
 		}
 	}
 	url := fmt.Sprintf("%s?service=%s&scope=repository:%s:pull", realm, service, c.ref.repository)
-	resp, err := c.do(ctx, http.MethodGet, url, nil)
+	// Credentials go to a token service over TLS only. Ones the service
+	// refuses, such as an expired password, leave a public image readable:
+	// the request is made again anonymously.
+	if !strings.HasPrefix(realm, "https://") {
+		creds = nil
+	}
+	resp, err := c.tokenRequest(ctx, url, creds)
+	if err == nil && resp.StatusCode == http.StatusUnauthorized && creds != nil {
+		resp.Body.Close()
+		creds = nil
+		resp, err = c.tokenRequest(ctx, url, nil)
+	}
 	if err != nil {
 		return
 	}
@@ -81,30 +115,73 @@ func (c *client) authenticate(ctx context.Context) {
 			token = body.AccessToken
 		}
 		c.mu.Lock()
-		c.token = token
+		c.token, c.signedIn = token, creds != nil
 		c.mu.Unlock()
 	}
 }
 
-func (c *client) do(ctx context.Context, method, url string, accept []string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, url, nil)
+func (c *client) tokenRequest(ctx context.Context, url string, creds *credential) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
-	for _, a := range accept {
-		req.Header.Add("Accept", a)
+	if creds != nil {
+		req.SetBasicAuth(creds.user, creds.secret)
 	}
-	return c.send(req)
+	return c.client.Do(req)
 }
 
-// send adds the bearer token, if there is one. Go drops it when a registry
-// redirects a blob to another host, so it never reaches a CDN.
+func (c *client) do(ctx context.Context, method, url string, accept []string) (*http.Response, error) {
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, method, url, nil)
+		if err != nil {
+			return nil, err
+		}
+		for _, a := range accept {
+			req.Header.Add("Accept", a)
+		}
+		resp, err := c.send(req)
+		if err == nil && attempt == 0 && c.refused(ctx, resp.StatusCode) {
+			resp.Body.Close()
+			continue
+		}
+		return resp, err
+	}
+}
+
+// refused reports whether a request the registry turned away is worth one
+// more try, and makes it ready: a token that expired gets renewed, and
+// credentials the registry refuses, such as an expired ECR login whose token
+// service still answers, give way to anonymous access, enough for a public
+// image.
+func (c *client) refused(ctx context.Context, status int) bool {
+	c.mu.Lock()
+	signedIn := c.signedIn
+	switch {
+	case status == http.StatusUnauthorized:
+	case status == http.StatusForbidden && signedIn:
+		c.anonymous, c.basic = true, nil
+	default:
+		c.mu.Unlock()
+		return false
+	}
+	c.mu.Unlock()
+	c.authenticate(ctx)
+	return true
+}
+
+// send adds the bearer token, or the credentials of a registry that takes
+// them directly. Go drops either when a registry redirects a blob to another
+// host, so neither reaches a CDN.
 func (c *client) send(req *http.Request) (*http.Response, error) {
 	c.mu.Lock()
-	token := c.token
+	token, basic := c.token, c.basic
 	c.mu.Unlock()
-	if token != "" {
+	switch {
+	case token != "":
 		req.Header.Set("Authorization", "Bearer "+token)
+	case basic != nil:
+		req.SetBasicAuth(basic.user, basic.secret)
 	}
 	return c.client.Do(req)
 }
@@ -157,9 +234,8 @@ func (b *resumingBlob) open() error {
 		if err != nil {
 			return fmt.Errorf("blob %s: %w", b.digest, err)
 		}
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+		if attempt == 0 && b.c.refused(b.ctx, resp.StatusCode) {
 			resp.Body.Close()
-			b.c.authenticate(b.ctx)
 			continue
 		}
 		if resp.StatusCode == http.StatusNotFound && b.c.fallback != nil {
@@ -220,9 +296,8 @@ func (c *client) blobRange(ctx context.Context, digest string, offset, length in
 		if err != nil {
 			return nil, fmt.Errorf("blob %s: %w", digest, err)
 		}
-		if resp.StatusCode == http.StatusUnauthorized && attempt == 0 {
+		if attempt == 0 && c.refused(ctx, resp.StatusCode) {
 			resp.Body.Close()
-			c.authenticate(ctx)
 			continue
 		}
 		if resp.StatusCode == http.StatusNotFound && c.fallback != nil {

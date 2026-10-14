@@ -77,8 +77,15 @@ if it names the same layer digest and size. `RANGE_INDEX_URL` sets another
 catalog, and `RANGE_INDEX_URL=off` turns it off. The catalog also holds a
 startup profile for popular images, so their first run prefetches the blocks
 that startup reads. `RANGE_REGISTRY_MIRROR=mirror.gcr.io` reads Docker Hub
-images from a mirror first, and falls back to Docker Hub. Range does not
-support private registries yet.
+images from a mirror first, and falls back to Docker Hub.
+
+Range signs in to a registry with what `docker login` stored: the
+configuration in `$DOCKER_CONFIG` or `~/.docker`, its credential helpers, such
+as `ecr-login`, and its credential store, such as `osxkeychain` or `desktop`.
+It keeps no credentials of its own. A private image then reads as a public
+one, and Docker Hub counts the account's rate limit, not an anonymous one.
+When a registry refuses the stored login, such as an expired ECR one, Range
+reads the image anonymously, which is enough for a public image.
 
 A Hugging Face repository becomes a read-only filesystem of its files. Range
 lists the files through the Hub API and reads each one with ranged requests.
