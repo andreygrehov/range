@@ -21,6 +21,12 @@ import (
 type Owner struct {
 	Repo      string   `json:"repo"`
 	Platforms []string `json:"platforms"`
+	// Tag is a tag of the repository the catalog read: latest when it was
+	// one. nvidia/cuda, for one, has no latest.
+	Tag string `json:"tag,omitempty"`
+	// Path is where the program is when it is not on the image's PATH under
+	// its own name, as /jq is not.
+	Path string `json:"path,omitempty"`
 }
 
 // Map lists, for each command, the repositories that hold it, best first.
@@ -109,6 +115,7 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 	type candidate struct {
 		rank      rank
 		platforms map[string]bool
+		tag, path string
 	}
 	found := map[string]map[string]*candidate{}
 	for _, img := range images {
@@ -140,6 +147,14 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 				c.rank = r
 			}
 			c.platforms[parent[d].platform] = true
+			if Repository(img.Image) == repo {
+				if tag := tagOf(img.Image); c.tag == "" || tag == "latest" {
+					c.tag = tag
+				}
+				if command == img.Entrypoint && img.EntrypointPath != "" && c.path == "" {
+					c.path = img.EntrypointPath
+				}
+			}
 		}
 	}
 
@@ -164,7 +179,8 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 			names = names[:maxOwners]
 		}
 		for _, repo := range names {
-			m[command] = append(m[command], Owner{Repo: repo, Platforms: keys(repos[repo].platforms)})
+			c := repos[repo]
+			m[command] = append(m[command], Owner{Repo: repo, Platforms: keys(c.platforms), Tag: c.tag, Path: c.path})
 		}
 	}
 	return m
@@ -213,6 +229,15 @@ func Repository(image string) string {
 		image = image[:colon]
 	}
 	return image
+}
+
+// tagOf is an image's tag, or "" when it names none.
+func tagOf(image string) string {
+	image, _, _ = strings.Cut(image, "@")
+	if colon := strings.LastIndex(image, ":"); colon > strings.LastIndex(image, "/") {
+		return image[colon+1:]
+	}
+	return ""
 }
 
 // rank orders the repositories that hold a command. Lower is better.

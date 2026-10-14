@@ -3,6 +3,8 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -36,10 +38,20 @@ func commandCommands(args []string) error {
 	return fmt.Errorf("commands: no subcommand %q; want which or build", args[0])
 }
 
-// commandsClient looks commands up in the catalog's map, and keeps it in
-// the cache for a day.
-func commandsClient() (*commands.Client, error) {
+// commandsDir is where Range keeps what it knows of command maps.
+func commandsDir() (string, error) {
 	c, err := core.ReadConfig()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(c.CacheDir, "commands"), nil
+}
+
+// commandsClient looks commands up in the catalog's map, and keeps it in
+// the cache for a day. Each catalog's map is kept apart: a root names its
+// own catalog's shards, so a mirror must not answer with another's.
+func commandsClient() (*commands.Client, error) {
+	dir, err := commandsDir()
 	if err != nil {
 		return nil, err
 	}
@@ -47,8 +59,9 @@ func commandsClient() (*commands.Client, error) {
 	if base == "" {
 		return nil, errors.New("commands: the catalog is off (RANGE_INDEX_URL)")
 	}
+	sum := sha256.Sum256([]byte(base))
 	return &commands.Client{
-		Base: base, Dir: filepath.Join(c.CacheDir, "commands"), MaxAge: 24 * time.Hour,
+		Base: base, Dir: filepath.Join(dir, hex.EncodeToString(sum[:6])), MaxAge: 24 * time.Hour,
 		HTTP: &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }

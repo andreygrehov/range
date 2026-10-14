@@ -21,6 +21,8 @@ range run <uri> --mount .:/work -- make           # with this directory inside, 
 range run <uri> [-- COMMAND...]           # run one command inside it
 range mount <uri> <dir>                   # mount it read-only on this Linux host
 range index IMAGE... [-o DIR]             # index images for a catalog, no root needed
+range x COMMAND[@VERSION] [ARGS...]       # run a command this machine does not have
+range init zsh|bash                       # run a missing command by its bare name
 range commands which COMMAND              # the images that hold a command, best first
 range commands build --list FILE -o DIR   # build the command map for a catalog
 range serve <uri> [--addr HOST:PORT]      # expose it as a local URL, by range
@@ -78,6 +80,16 @@ catalog, and `RANGE_INDEX_URL=off` turns it off. The catalog also holds a
 startup profile for popular images, so their first run prefetches the blocks
 that startup reads. `RANGE_REGISTRY_MIRROR=mirror.gcr.io` reads Docker Hub
 images from a mirror first, and falls back to Docker Hub.
+
+`range x pdflatex paper.tex` runs a command this machine does not have, from
+the image that holds it, with the current directory at the same path inside.
+The catalog's command map names the image: the first one built for this
+platform. A version is a tag: `python@2.7` runs in `python:2.7`, and a command
+the map does not hold runs from the image of its name, so `gcc@4.9` runs in
+`gcc:4.9`. Before it runs a command from an image that is not an official one,
+Range asks once, at a terminal. `eval "$(range init zsh)"` in `~/.zshrc` sends
+every missing command to `range x`, so `pdflatex` works by its name. A command
+this machine has always runs as before.
 
 Range signs in to a registry with what `docker login` stored: the
 configuration in `$DOCKER_CONFIG` or `~/.docker`, its credential helpers, such

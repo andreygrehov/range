@@ -49,6 +49,14 @@ sudo range run --gpus all ghcr.io/ggml-org/llama.cpp:light-cuda-b11206 \
   llama-cli -m /model/gemma-3-270m-it-Q4_K_M.gguf -ngl 99 -st -p "Hi"
 ```
 
+Every command, already installed. With `eval "$(range init zsh)"` in your
+`~/.zshrc`, a missing command runs from the image that holds it:
+
+```bash
+pdflatex paper.tex                          # from texlive/texlive, lazily
+python@2.7 -c 'print "hello from 2010"'     # from python:2.7
+```
+
 A shell in one of your AMIs or EBS snapshots, from a laptop, with no instance:
 
 ```bash

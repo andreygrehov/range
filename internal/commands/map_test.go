@@ -37,7 +37,7 @@ func TestBuild(t *testing.T) {
 		image("haxe:4", "dh", map[string]int{"ls": 0, "haxe": 1, "python3": 1}, "ls"),
 		// jq is built from scratch: its entrypoint is its command.
 		{Image: "ghcr.io/jqlang/jq:1.7", Platform: "linux/arm64", Layers: []string{"sha256:j"},
-			Commands: map[string]int{"jq": 0}, Entrypoint: "jq"},
+			Commands: map[string]int{"jq": 0}, Entrypoint: "jq", EntrypointPath: "/jq"},
 		// mongo carries a jq of its own.
 		image("mongo:7", "dm", map[string]int{"ls": 0, "jq": 1, "mongod": 1}, "ls"),
 		// erlang is named for erl.
@@ -59,8 +59,11 @@ func TestBuild(t *testing.T) {
 			t.Errorf("%s: got %s, want %s", command, got, want)
 		}
 	}
-	if p := fmt.Sprint(m["jq"][0].Platforms); p != "[linux/arm64]" {
-		t.Errorf("jq platforms = %s", p)
+	if jq := m["jq"][0]; fmt.Sprint(jq.Platforms) != "[linux/arm64]" || jq.Tag != "1.7" || jq.Path != "/jq" {
+		t.Errorf("jq: %+v", jq)
+	}
+	if py := m["python3"][0]; py.Tag != "3.12" || py.Path != "" {
+		t.Errorf("python3: %+v", py)
 	}
 
 	// A pin puts its repository first.

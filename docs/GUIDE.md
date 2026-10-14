@@ -88,6 +88,30 @@ A private image works after `docker login`: Range signs in with what Docker
 stored. Not supported yet: private or gated Hugging Face repositories, the image's `USER` (the workload runs as root), and GPUs in
 Range's VM, on a Mac or on Linux without root.
 
+## Every command, already installed
+
+With one line in `~/.zshrc`, a command this machine does not have runs from
+the container image that holds it, lazily, by its bare name:
+
+```bash
+eval "$(range init zsh)"
+
+pdflatex paper.tex                      # from texlive/texlive
+nvcc saxpy.cu                           # from nvidia/cuda
+python@2.7 -c 'print "hello from 2010"' # from python:2.7
+```
+
+On a clean Ubuntu 24.04 on EC2, with the images' indexes in the catalog,
+`pdflatex paper.tex` took 5.6 s and moved 54 MB of TeX Live. `apt-get install
+texlive-latex-base` took 58.6 s, and `docker pull` of the same image 65.1 s
+and 2.6 GB. Python 2.7 took 2.4 s: Ubuntu 24.04 has no package of it.
+
+The catalog's command map says which image holds a command: the one that
+brought it, not every image built on that one. `range commands which nvcc`
+shows the answer. Only the current directory is inside, at its own path.
+Each command starts a session of its own: about a second in Range's VM, so a
+loop that runs one a thousand times is slow.
+
 ## EBS snapshots and AMIs
 
 `range shell` opens an EBS snapshot, or the root disk of an AMI, from any machine

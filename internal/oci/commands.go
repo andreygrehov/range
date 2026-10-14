@@ -27,6 +27,8 @@ type ImageCommands struct {
 	// one by path. An image built from scratch can hold its program outside
 	// PATH, as /jq: this names it.
 	Entrypoint string `json:"entrypoint,omitempty"`
+	// EntrypointPath is where the entrypoint's program is: /jq.
+	EntrypointPath string `json:"entrypoint_path,omitempty"`
 	// OS lists the commands the image's operating system already has at the
 	// same path. A later layer that updates one, as apt-get upgrade does,
 	// does not make it the image's own.
@@ -82,7 +84,7 @@ func commandsOf(layers [][]Entry, config ImageConfig) ImageCommands {
 	}
 	if ep := config.Config.Entrypoint; len(ep) > 0 && strings.HasPrefix(ep[0], "/") {
 		if _, ok := fs.executable(cleanPath(ep[0])); ok {
-			c.Entrypoint = path.Base(ep[0])
+			c.Entrypoint, c.EntrypointPath = path.Base(ep[0]), path.Clean(ep[0])
 			add(c.Entrypoint, cleanPath(ep[0]))
 		}
 	}
