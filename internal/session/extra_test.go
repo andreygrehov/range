@@ -100,3 +100,19 @@ func TestLocalDir(t *testing.T) {
 		t.Errorf(`ParseMount(".:/work") = %q, %q, %v`, uri, target, err)
 	}
 }
+
+func TestMountOption(t *testing.T) {
+	for spec, want := range map[string]struct {
+		rest    string
+		overlay bool
+	}{
+		"/Users/me:/Users/me:overlay": {"/Users/me:/Users/me", true},
+		".:/work":                     {".:/work", false},
+		"hf://org/model:/model":       {"hf://org/model:/model", false},
+	} {
+		rest, overlay := MountOption(spec)
+		if rest != want.rest || overlay != want.overlay {
+			t.Errorf("MountOption(%q) = %q, %v", spec, rest, overlay)
+		}
+	}
+}

@@ -33,6 +33,10 @@ type Mount struct {
 type Dir struct {
 	Path   string
 	Target string
+	// Overlay shows it through a layer of the session's own: the
+	// environment reads all of it, and what it writes there goes when the
+	// session ends, the directory untouched.
+	Overlay bool
 }
 
 // LocalDir reports whether the source of a --mount is a directory on this
@@ -57,14 +61,28 @@ func LocalDir(source string) (string, bool) {
 	return abs, err == nil
 }
 
-// bindDirs shows each directory inside the environment, read-write.
+// bindDirs shows each directory inside the environment, read-write or
+// through a layer of the session's own, in order: a directory shown inside
+// another one goes after it.
 func bindDirs(sess *Session, dirs []Dir) error {
-	for _, d := range dirs {
+	for i, d := range dirs {
 		target, err := makeDirIn(sess.root, d.Target)
 		if err != nil {
 			return err
 		}
-		if err := tool.Run("mount", "--bind", d.Path, target); err != nil {
+		if d.Overlay {
+			layer := filepath.Join(sess.dir, "overlays", strconv.Itoa(i))
+			upper, work := filepath.Join(layer, "upper"), filepath.Join(layer, "work")
+			for _, dir := range []string{upper, work} {
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					return err
+				}
+			}
+			if err := tool.Run("mount", "-t", "overlay", "overlay", "-o",
+				overlayOptions(d.Path, upper, work), target); err != nil {
+				return fmt.Errorf("show %s at %s: %w", d.Path, d.Target, err)
+			}
+		} else if err := tool.Run("mount", "--bind", d.Path, target); err != nil {
 			return fmt.Errorf("show %s at %s: %w", d.Path, d.Target, err)
 		}
 		sess.Push(func() error {
@@ -75,6 +93,13 @@ func bindDirs(sess *Session, dirs []Dir) error {
 		})
 	}
 	return nil
+}
+
+// MountOption takes the option off the end of a --mount: ":overlay" shows a
+// directory of this machine through a layer of the session's own.
+func MountOption(spec string) (string, bool) {
+	rest, overlay := strings.CutSuffix(spec, ":overlay")
+	return rest, overlay
 }
 
 // ParseMount splits "URI:/path" at the last ":/", so a URI's own scheme

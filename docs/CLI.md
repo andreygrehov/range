@@ -85,6 +85,9 @@ images from a mirror first, and falls back to Docker Hub.
 
 `range x pdflatex paper.tex` runs a command this machine does not have, from
 the image that holds it, with the current directory at the same path inside.
+The home directory is inside too, at its own path and as `HOME`, so a command
+reads `~/.gitconfig`, `~/.kube` or `~/.aws`. What it writes there goes when it
+ends: a Linux program never fills a Mac's home.
 The catalog's command map names the image: the first one built for this
 platform. A version is a tag: `python@2.7` runs in `python:2.7`, and a command
 the map does not hold runs from the image of its name, so `gcc@4.9` runs in
@@ -161,7 +164,7 @@ ships.
 | `--keep` | off | Keep this session's writable layer |
 | `--profile off\|record\|auto` | `auto` | Working-set profile handling |
 | `--prefetch-limit SIZE` | `256MiB` | Ceiling on profile prefetch |
-| `--mount SOURCE:/path` | none | Show a remote source read-only at `/path`, e.g. `hf://org/model:/model`, or a directory of this machine read-write, e.g. `.:/work`. Repeatable |
+| `--mount SOURCE:/path[:overlay]` | none | Show a remote source read-only at `/path`, e.g. `hf://org/model:/model`, or a directory of this machine read-write, e.g. `.:/work`. With `:overlay`, the directory is whole inside and its writes go when the session ends. Repeatable |
 | `-e`, `--env KEY=VALUE` | none | Set a variable over the image's. `-e KEY` passes this shell's value, and leaves it out when it is unset. Repeatable |
 | `-p`, `--publish [IP:]HOSTPORT:PORT` | none | Publish a port of the environment on this machine, on `127.0.0.1` unless `IP` says otherwise. Repeatable |
 | `--gpus all` | none | Show this machine's NVIDIA GPUs inside the environment. Linux, as root |

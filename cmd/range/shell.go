@@ -54,7 +54,8 @@ func runSession(args []string, defaultCommand bool) error {
 	var ports []session.Port
 	r, c, command, err := openFromArgs("shell", args, func(fs *flag.FlagSet) {
 		fs.Func("mount", "SOURCE:/path: a remote filesystem, read-only, or a directory of this machine, read-write (repeatable)", func(v string) error {
-			if _, _, err := session.ParseMount(v); err != nil {
+			spec, _ := session.MountOption(v)
+			if _, _, err := session.ParseMount(spec); err != nil {
 				return err
 			}
 			mountSpecs = append(mountSpecs, v)
@@ -125,10 +126,14 @@ func runSession(args []string, defaultCommand bool) error {
 	var mounts []session.Mount
 	var dirs []session.Dir
 	for _, spec := range mountSpecs {
+		spec, overlay := session.MountOption(spec)
 		uri, target, _ := session.ParseMount(spec)
 		if path, ok := session.LocalDir(uri); ok {
-			dirs = append(dirs, session.Dir{Path: path, Target: target})
+			dirs = append(dirs, session.Dir{Path: path, Target: target, Overlay: overlay})
 			continue
+		}
+		if overlay {
+			return fmt.Errorf("--mount %s: only a directory of this machine takes :overlay", spec)
 		}
 		mr, err := core.Open(context.Background(), uri, c)
 		if err != nil {

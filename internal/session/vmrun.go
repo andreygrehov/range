@@ -49,7 +49,7 @@ func vmHostConfig(opts Options, assets, initrd string, disks []string, memory ui
 		cfg.Guest.Mounts = append(cfg.Guest.Mounts, m.Target)
 	}
 	for i, d := range opts.Dirs {
-		cfg.Guest.Shares = append(cfg.Guest.Shares, vm.Share{Tag: vm.ShareTag(i), Path: d.Path, Target: d.Target})
+		cfg.Guest.Shares = append(cfg.Guest.Shares, vm.Share{Tag: vm.ShareTag(i), Path: d.Path, Target: d.Target, Overlay: d.Overlay})
 	}
 	for _, p := range opts.Ports {
 		cfg.Guest.Ports = append(cfg.Guest.Ports, p.Port)

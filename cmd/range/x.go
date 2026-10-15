@@ -50,7 +50,15 @@ func commandX(args []string) error {
 	}
 	fmt.Fprintf(os.Stderr, "\033[2m[range] %s from %s\033[0m\n", args[0], image)
 	quiet, oci.Quiet = true, true
-	run := []string{"--mount", cwd + ":" + cwd, "--workdir", cwd, "--workload", "x-" + name}
+	run := []string{"--workdir", cwd, "--workload", "x-" + name}
+	// The home directory is inside, at its own path, for the files a command
+	// reads there: ~/.gitconfig, ~/.kube, ~/.aws. What the command writes
+	// there goes with the session, so a Linux program never fills a Mac's
+	// home. The current directory then goes on top of it, for real.
+	if home, err := os.UserHomeDir(); err == nil && home != "/" {
+		run = append(run, "--mount", home+":"+home+":overlay", "-e", "HOME="+home)
+	}
+	run = append(run, "--mount", cwd+":"+cwd)
 	// A proxy this shell uses, the command needs too.
 	for _, key := range []string{"HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY", "https_proxy", "http_proxy", "no_proxy"} {
 		if _, set := os.LookupEnv(key); set {

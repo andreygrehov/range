@@ -120,7 +120,7 @@ func runVMGuest() (int, error) {
 		if err := syscall.Mount(share.Tag, at, "virtiofs", 0, ""); err != nil {
 			return 1, fmt.Errorf("mount the shared directory for %s: %w", share.Target, err)
 		}
-		dirs = append(dirs, session.Dir{Path: at, Target: share.Target})
+		dirs = append(dirs, session.Dir{Path: at, Target: share.Target, Overlay: share.Overlay})
 	}
 	for i, port := range cfg.Ports {
 		if err := relayPort(uint32(vm.PortRelay+i), port); err != nil {

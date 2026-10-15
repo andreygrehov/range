@@ -94,9 +94,10 @@ type Spec struct {
 
 // Share is a directory of the host shown read-write in the guest.
 type Share struct {
-	Tag    string `json:"tag"`
-	Path   string `json:"path,omitempty"` // on the Mac
-	Target string `json:"target"`         // in the environment
+	Tag     string `json:"tag"`
+	Path    string `json:"path,omitempty"` // on the Mac
+	Target  string `json:"target"`         // in the environment
+	Overlay bool   `json:"overlay,omitempty"`
 }
 
 // ShareTag is the virtiofs tag of share i.
