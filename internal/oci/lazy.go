@@ -304,7 +304,9 @@ func (l *Lazy) fetchCatalogIndexes(ctx context.Context, r resolved) {
 	for i, err := range errs {
 		switch {
 		case err == nil:
-			fmt.Fprintf(os.Stderr, "Index of %s, layer %d/%d, from the catalog\n", l.image, i+1, len(layers))
+			if !Quiet {
+				fmt.Fprintf(os.Stderr, "Index of %s, layer %d/%d, from the catalog\n", l.image, i+1, len(layers))
+			}
 		case !errors.Is(err, errNotInCatalog):
 			fmt.Fprintf(os.Stderr, "range: catalog: %v; indexing it here\n", err)
 		}

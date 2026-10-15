@@ -18,6 +18,11 @@ import (
 // points Range at another catalog, and "off" turns the catalog off.
 const DefaultCatalog = "https://github.com/andreygrehov/range-index/releases/download"
 
+// Quiet leaves out the note that a layer's index came from the catalog,
+// which needs no one's attention. Indexing a layer, which takes a while, is
+// still told.
+var Quiet bool
+
 // CatalogURL is the catalog in use, or "" when it is off.
 func CatalogURL() string {
 	switch v := strings.TrimRight(os.Getenv("RANGE_INDEX_URL"), "/"); v {

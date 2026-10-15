@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/andreygrehov/range/internal/commands"
+	"github.com/andreygrehov/range/internal/oci"
 	"github.com/andreygrehov/range/internal/session"
 )
 
@@ -47,7 +48,7 @@ func commandX(args []string) error {
 		return err
 	}
 	fmt.Fprintf(os.Stderr, "\033[2m[range] %s from %s\033[0m\n", args[0], image)
-	quiet = true
+	quiet, oci.Quiet = true, true
 	run := []string{"--mount", cwd + ":" + cwd, "--workdir", cwd, "--workload", "x-" + name, image, "--", program}
 	return commandRun(append(run, args[1:]...))
 }
