@@ -197,16 +197,30 @@ func (in *inside) handle(ctx context.Context, req InsideRequest) InsideReply {
 	return InsideReply{Image: image, Root: img.root, Lower: img.lower, Program: program, First: first}
 }
 
+// attach opens image and attaches it as a block device, natively or as the
+// session's runtime does.
+func (in *inside) attach(ctx context.Context, image string) (string, error) {
+	if open := in.opts.OpenImage; open != nil {
+		device, detach, err := open(ctx, image)
+		if err != nil {
+			return "", err
+		}
+		in.sess.Push(detach)
+		return device, nil
+	}
+	r, err := core.Open(ctx, image, in.opts.Config)
+	if err != nil {
+		return "", err
+	}
+	in.sess.Push(func() error { r.Close(); return nil })
+	return attach(in.sess, r)
+}
+
 // mount opens image, attaches it and mounts it in the session's namespace:
 // read-only, with a layer of the session's own on top, so a command can write
 // in its image's root, and nothing of it outlives the session.
 func (in *inside) mount(ctx context.Context, image string, n int) (root, lower string, err error) {
-	r, err := core.Open(ctx, image, in.opts.Config)
-	if err != nil {
-		return "", "", err
-	}
-	in.sess.Push(func() error { r.Close(); return nil })
-	device, err := attach(in.sess, r)
+	device, err := in.attach(ctx, image)
 	if err != nil {
 		return "", "", err
 	}

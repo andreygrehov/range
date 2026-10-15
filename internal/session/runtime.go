@@ -92,6 +92,9 @@ type Options struct {
 	// Commands runs a command the environment lacks from the image that
 	// holds it, or nil.
 	Commands Finder
+	// OpenImage attaches an image as a block device, for Commands. Nil
+	// opens it here and attaches it natively; Range's VM asks its host.
+	OpenImage func(ctx context.Context, image string) (device string, detach func() error, err error)
 	// User runs the workload as another user than root, or nil.
 	User *User
 	// CACerts are authorities this machine trusts, added to the

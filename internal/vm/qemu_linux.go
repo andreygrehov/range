@@ -236,13 +236,14 @@ func randomCID() (uint32, error) {
 }
 
 // RandomPortBase picks the first of a session's vsock ports on the host,
-// apart from DefaultPortBase and the relay ports.
+// apart from DefaultPortBase and the relay ports, and a multiple of portSpan,
+// so a session's ports never meet another's.
 func RandomPortBase() (uint32, error) {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return 0, err
 	}
-	return 0x10000 + binary.LittleEndian.Uint32(b[:])%0x7FFF0000&^3, nil
+	return 0x10000 + binary.LittleEndian.Uint32(b[:])%0x7FFF0000&^(portSpan-1), nil
 }
 
 func waitForFile(path string, limit time.Duration) error {

@@ -41,7 +41,7 @@ net/vmw_vsock/vsock net/vmw_vsock/vmw_vsock_virtio_transport_common net/vmw_vsoc
 
 # Modules a session loads only when it needs them. They stay compressed, and
 # the kernel decompresses them as it loads them.
-on_demand="fs/xfs/xfs"
+on_demand="fs/xfs/xfs drivers/block/nbd"
 
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT

@@ -144,6 +144,7 @@ ships.
 | `-e`, `--env KEY=VALUE` | none | Set a variable over the image's. `-e KEY` passes this shell's value, and leaves it out when it is unset. Repeatable |
 | `-p`, `--publish [IP:]HOSTPORT:PORT` | none | Publish a port of the environment on this machine, on `127.0.0.1` unless `IP` says otherwise. Repeatable |
 | `--user UID[:GID]` | root | Run the workload as this user and group, by number |
+| `--commands` | off | Run a command the environment lacks from the image that holds it, as the catalog's command map says |
 | `--gpus all` | none | Show this machine's NVIDIA GPUs inside the environment. Linux, as root |
 
 In Range's VM on a Mac, a published port reaches a server inside whether it

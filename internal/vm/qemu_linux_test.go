@@ -39,7 +39,7 @@ func TestRandomCIDAndPortBase(t *testing.T) {
 			t.Fatalf("randomCID() = %d, %v", cid, err)
 		}
 		base, err := RandomPortBase()
-		if err != nil || base < 0x10000 || base%4 != 0 || base > 0xFFFFFFFF-4 {
+		if err != nil || base < 0x10000 || base%portSpan != 0 || base > 0xFFFFFFFF-4 {
 			t.Fatalf("RandomPortBase() = %d, %v", base, err)
 		}
 	}

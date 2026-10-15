@@ -10,6 +10,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/andreygrehov/range/internal/core"
 	"github.com/andreygrehov/range/internal/session"
 	"github.com/andreygrehov/range/internal/vm"
 )
@@ -28,6 +29,15 @@ func commandVMHost(_ []string) error {
 		return fmt.Errorf("read the vm configuration: %w", err)
 	}
 	configFile.Close()
+	// The configuration came as JSON: the commands from other images are
+	// this process's to serve.
+	if cfg.ServeCommands {
+		if finder, err := newCatalogFinder(); err == nil {
+			if c, err := core.ReadConfig(); err == nil {
+				cfg.Commands = session.VMCommands(finder, c)
+			}
+		}
+	}
 
 	machine, err := vm.StartVZ(cfg.Spec())
 	if err != nil {

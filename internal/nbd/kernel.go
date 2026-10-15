@@ -107,19 +107,35 @@ func ConnectKernel(address, device string) (disconnect func() error, err error) 
 	if err != nil {
 		return nil, fmt.Errorf("connect to the NBD export at %s: %w", address, err)
 	}
-	conn.SetDeadline(time.Now().Add(15 * time.Second))
+	return ConnectKernelConn(conn.(*net.TCPConn), device)
+}
+
+// Stream is a connection to an NBD server that the kernel can take over: a
+// TCP connection, or a vsock one, which is a file.
+type Stream interface {
+	io.ReadWriteCloser
+	syscall.Conn
+}
+
+// ConnectKernelConn negotiates on a connection to an NBD server and attaches
+// it to a kernel device, as ConnectKernel does.
+func ConnectKernelConn(conn Stream, device string) (disconnect func() error, err error) {
+	raw := conn
+	if d, ok := conn.(interface{ SetDeadline(time.Time) error }); ok {
+		d.SetDeadline(time.Now().Add(15 * time.Second))
+		defer d.SetDeadline(time.Time{})
+	}
 	size, flags, err := clientHandshake(conn)
 	if err != nil {
 		conn.Close()
 		return nil, err
 	}
-	conn.SetDeadline(time.Time{})
 	if size <= 0 || size%deviceBlockSize != 0 {
 		conn.Close()
 		return nil, fmt.Errorf("nbd: export size %d is not a multiple of %d", size, deviceBlockSize)
 	}
-	socketFile, err := conn.(*net.TCPConn).File()
-	conn.Close() // File dup'd the descriptor; the kernel gets the duplicate
+	socketFile, err := duplicate(raw)
+	conn.Close() // the kernel gets the duplicate
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +174,22 @@ func ConnectKernel(address, device string) (disconnect func() error, err error) 
 		return nil
 	}
 	return disconnect, nil
+}
+
+// duplicate returns a file of its own for a connection's descriptor.
+func duplicate(conn syscall.Conn) (*os.File, error) {
+	rc, err := conn.SyscallConn()
+	if err != nil {
+		return nil, err
+	}
+	fd, dupErr := -1, error(nil)
+	if err := rc.Control(func(f uintptr) { fd, dupErr = syscall.Dup(int(f)) }); err != nil {
+		return nil, err
+	}
+	if dupErr != nil {
+		return nil, dupErr
+	}
+	return os.NewFile(uintptr(fd), "nbd"), nil
 }
 
 // Attach wires the kernel's nbd device to an in-process server over a

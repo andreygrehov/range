@@ -16,7 +16,14 @@ const moduleInitCompressedFile = 4
 // session needs it, from the initramfs. A filesystem with no such module is
 // left to the mount to report.
 func LoadFilesystem(fsType string) error {
-	f, err := os.Open(filepath.Join("/lib/modules", fsType+".ko.xz"))
+	return LoadModule(fsType, "")
+}
+
+// LoadModule loads a module the guest loads only when a session needs it,
+// from the initramfs, with its parameters. One not there is left to what
+// needs it to report.
+func LoadModule(name, params string) error {
+	f, err := os.Open(filepath.Join("/lib/modules", name+".ko.xz"))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}
@@ -24,9 +31,9 @@ func LoadFilesystem(fsType string) error {
 		return err
 	}
 	defer f.Close()
-	params := []byte{0}
+	paramBytes := append([]byte(params), 0)
 	_, _, errno := syscall.Syscall(sysFinitModule, f.Fd(),
-		uintptr(unsafe.Pointer(&params[0])), moduleInitCompressedFile)
+		uintptr(unsafe.Pointer(&paramBytes[0])), moduleInitCompressedFile)
 	if errno != 0 && errno != syscall.EEXIST {
 		return fmt.Errorf("load %s: %w", f.Name(), errno)
 	}

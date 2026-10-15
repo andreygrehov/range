@@ -49,7 +49,7 @@ func runSession(args []string, defaultCommand bool) error {
 		return err
 	}
 	var workdir, shellPath, upperDir, name, profileFlag, prefetchLimit, workload string
-	var keep, gpus bool
+	var keep, gpus, fromImages bool
 	var user *session.User
 	var mountSpecs, env []string
 	var ports []session.Port
@@ -83,6 +83,7 @@ func runSession(args []string, defaultCommand bool) error {
 			return session.ParseGPUs(v)
 		})
 		fs.StringVar(&workload, "workload", profile.DefaultWorkload, "workload name, so profiles do not collide")
+		fs.BoolVar(&fromImages, "commands", false, "run a command the environment lacks from the image that holds it")
 		fs.StringVar(&workdir, "workdir", "", "working directory inside the environment")
 		fs.Func("user", "UID[:GID] to run the workload as, by number", func(v string) error {
 			u, err := session.ParseUser(v)
@@ -121,13 +122,18 @@ func runSession(args []string, defaultCommand bool) error {
 	if err != nil {
 		return err
 	}
-	// A command the environment lacks comes from the image that holds it,
-	// natively for now.
+	// With --commands, a command the environment lacks comes from the image
+	// that holds it.
 	var finder session.Finder
-	if host.Name() == "native" && oci.CatalogURL() != "" {
-		if f, err := newCatalogFinder(); err == nil {
-			finder = f
+	if fromImages {
+		if host.Name() == "lima" {
+			return errors.New("--commands needs Range's own VM or a native session, not Lima")
 		}
+		f, err := newCatalogFinder()
+		if err != nil {
+			return fmt.Errorf("--commands: %w", err)
+		}
+		finder = f
 	}
 	var nvidia *session.NVIDIA
 	if gpus {

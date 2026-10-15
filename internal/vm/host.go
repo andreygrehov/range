@@ -2,6 +2,7 @@ package vm
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,6 +47,15 @@ func Serve(m Machine, cfg HostConfig, ready func()) (int, error) {
 		base = DefaultPortBase
 	}
 	ports := PortsFrom(base)
+	if cfg.Commands != nil {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		stop, err := serveCommands(ctx, m, base, cfg.Commands)
+		if err != nil {
+			return 1, fmt.Errorf("serve commands from other images: %w", err)
+		}
+		defer stop()
+	}
 	terminal := cfg.Guest.Terminal
 	listeners := map[uint32]net.Listener{}
 	for _, port := range []uint32{ports.Control, ports.Stdin, ports.Stdout, ports.Stderr} {

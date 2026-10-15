@@ -20,6 +20,13 @@ const (
 	portStdin   = 1
 	portStdout  = 2
 	portStderr  = 3
+	// portCommands serves the commands a session runs from other images,
+	// and from portImages on, one port each, the images they come from.
+	portCommands = 4
+	portImages   = 8
+	// portSpan is how many ports a session's base keeps: a base is a
+	// multiple of it.
+	portSpan = 64
 
 	// PortRelay+i carries connections to the i-th published port: the host
 	// connects, and the guest relays to that port on its own 127.0.0.1.
@@ -27,11 +34,11 @@ const (
 )
 
 // Ports are the vsock ports of one session.
-type Ports struct{ Control, Stdin, Stdout, Stderr uint32 }
+type Ports struct{ Control, Stdin, Stdout, Stderr, Commands uint32 }
 
 // PortsFrom returns the ports of a session from its base.
 func PortsFrom(base uint32) Ports {
-	return Ports{base + portControl, base + portStdin, base + portStdout, base + portStderr}
+	return Ports{base + portControl, base + portStdin, base + portStdout, base + portStderr, base + portCommands}
 }
 
 // PortBase reads range.port from a kernel command line, or DefaultPortBase.
@@ -66,6 +73,8 @@ type GuestConfig struct {
 	Rows     uint16   `json:"rows,omitempty"`
 	Cols     uint16   `json:"cols,omitempty"`
 	Term     string   `json:"term,omitempty"`
+	// Commands says the host serves commands from other images.
+	Commands bool `json:"commands,omitempty"`
 	// CACerts are authorities the host trusts, for the environment's bundle.
 	CACerts []byte `json:"ca_certs,omitempty"`
 	// User is UID:GID to run the workload as, or "".
@@ -122,6 +131,10 @@ type HostConfig struct {
 	PortBase uint32 `json:"port_base,omitempty"`
 	// Publish is where on the Mac each of Guest.Ports is published.
 	Publish []Publish `json:"publish,omitempty"`
+	// ServeCommands asks for commands from other images. Commands serves
+	// them: a process that reads this configuration as JSON makes its own.
+	ServeCommands bool     `json:"serve_commands,omitempty"`
+	Commands      Commands `json:"-"`
 }
 
 // Spec is the machine cfg describes.

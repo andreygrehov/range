@@ -52,6 +52,10 @@ func vmHostConfig(opts Options, assets, initrd string, disks []string, memory ui
 		cfg.Guest.Shares = append(cfg.Guest.Shares, vm.Share{Tag: vm.ShareTag(i), Path: d.Path, Target: d.Target, Overlay: d.Overlay})
 	}
 	cfg.Guest.CACerts = opts.CACerts
+	if opts.Commands != nil {
+		cfg.Guest.Commands, cfg.ServeCommands = true, true
+		cfg.Commands = VMCommands(opts.Commands, opts.Config)
+	}
 	if u := opts.User; u != nil {
 		cfg.Guest.User = fmt.Sprintf("%d:%d", u.UID, u.GID)
 	}

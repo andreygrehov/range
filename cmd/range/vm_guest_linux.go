@@ -138,6 +138,10 @@ func runVMGuest() (int, error) {
 			return 1, err
 		}
 	}
+	if cfg.Commands {
+		g := &guestCommands{port: ports.Commands}
+		opts.Commands, opts.OpenImage = g, g.Open
+	}
 	runErr := session.MountAndRun(context.Background(), opts, vm.DiskName(0), func() {
 		fmt.Fprintln(control, "ready")
 		<-proceed

@@ -90,11 +90,12 @@ Range's VM, on a Mac or on Linux without root.
 
 ## A command the environment lacks
 
-Inside a session, a command the environment does not have runs from the image
-that holds it, as the catalog's command map says:
+With `--commands`, a command the session's environment does not have runs from
+the image that holds it, as the catalog's command map says. Without it, a
+session is as it always was.
 
 ```bash
-$ range shell ubuntu:24.04
+$ range shell ubuntu:24.04 --commands
 root@range:/work# nvcc saxpy.cu -o saxpy && ./saxpy   # nvcc from nvidia/cuda
 root@range:/work# python3 -c 'print(42)'              # from python
 ```
@@ -104,8 +105,8 @@ own, and sees the session's current directory, `/tmp` and home at their own
 paths: what it builds runs in the session. It is a process of the session's
 shell like any other, so pipes, Ctrl+C and the exit status work as they do for
 a command the environment has. A session takes commands only from official
-images and from publishers the catalog trusts. This works in sessions that run
-natively, on Linux as root, for now.
+images and from publishers the catalog trusts. In Range's VM, on a Mac or on
+Linux without root, the host opens the image and serves it to the VM.
 
 ## EBS snapshots and AMIs
 
