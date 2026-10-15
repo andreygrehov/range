@@ -209,9 +209,7 @@ func runSession(args []string, defaultCommand bool) error {
 		sess.State = session.StateReady
 		sess.ReadyIn = time.Since(started)
 		r.ReadyIn, r.SessionName = sess.ReadyIn, sess.Name
-		if !quiet {
-			printEnvironmentBanner(sess, r, sess.Meta, profileHit, priorSessions, mounts, dirs, nvidia)
-		}
+		printEnvironmentBanner(sess, r, sess.Meta, profileHit, priorSessions, mounts, dirs, nvidia)
 	})
 
 	// Record what this session needed before tearing anything down.
@@ -244,9 +242,7 @@ func runSession(args []string, defaultCommand bool) error {
 	if err := sess.Cleanup(); err != nil {
 		log.Printf("range: cleanup: %v", err)
 	}
-	if !quiet {
-		printSessionSummary(sess, r, sessionsLearned, mounts)
-	}
+	printSessionSummary(sess, r, sessionsLearned, mounts)
 	return runErr
 }
 

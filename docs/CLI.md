@@ -21,11 +21,6 @@ range run <uri> --mount .:/work -- make           # with this directory inside, 
 range run <uri> [-- COMMAND...]           # run one command inside it
 range mount <uri> <dir>                   # mount it read-only on this Linux host
 range index IMAGE... [-o DIR]             # index images for a catalog, no root needed
-range x COMMAND[@VERSION] [ARGS...]       # run a command this machine does not have
-range init zsh|bash                       # run a missing command by its bare name
-range shims                               # make a shim for every command in the map
-range commands allow REPOSITORY           # let a script run commands from this image
-range commands which COMMAND              # the images that hold a command, best first
 range commands build --list FILE -o DIR   # build the command map for a catalog
 range serve <uri> [--addr HOST:PORT]      # expose it as a local URL, by range
 range inspect <uri>                       # identity, size, cache state
@@ -83,36 +78,11 @@ startup profile for popular images, so their first run prefetches the blocks
 that startup reads. `RANGE_REGISTRY_MIRROR=mirror.gcr.io` reads Docker Hub
 images from a mirror first, and falls back to Docker Hub.
 
-`range x pdflatex paper.tex` runs a command this machine does not have, from
-the image that holds it, with the current directory at the same path inside.
-The home directory is inside too, at its own path and as `HOME`, so a command
-reads `~/.gitconfig`, `~/.kube` or `~/.aws`. What it writes there goes when it
-ends: a Linux program never fills a Mac's home.
-The catalog's command map names the image: the first one built for this
-platform. A version is a tag: `python@2.7` runs in `python:2.7`, and a command
-the map does not hold runs from the image of its name, so `gcc@4.9` runs in
-`gcc:4.9`. `eval "$(range init zsh)"` in `~/.zshrc` sends every missing command
-to `range x`, so `pdflatex` works by its name. It also puts shims at the end of
-`PATH`, one for each command in the map, so a script or a Makefile finds them
-too. `range init` refreshes them in the background once a day, and `range
-shims` does it now. A command this machine has always runs as before.
-
-Before a command runs from an image that is not an official one, Range asks
-once, at a terminal. Away from a terminal, only a repository allowed before
-runs: `range commands allow texlive/texlive` allows one. A typo in a build
-therefore never runs a stranger's image unseen. A proxy set in
-`HTTPS_PROXY`, `HTTP_PROXY` or `NO_PROXY` applies inside too.
-
 Range appends the authorities this machine trusts to every bundle of them in
 the environment, in the session's own layer, so a proxy that inspects TLS
 works inside too. On Linux they are the system's bundle. On a Mac, which keeps
 them in the keychain, set `RANGE_CA_FILE` to a PEM file of the ones to add.
 `RANGE_CA_FILE=none` adds none.
-
-Range trusts the command map only when the catalog's key signed it, and does
-not use a map built more than 30 days ago. For a catalog of your own, give its
-keys in `RANGE_MAP_KEYS`, base64 and comma separated, and sign its map with
-`range commands sign`. `RANGE_MAP_KEYS=off` reads a map unsigned.
 
 Range signs in to a registry with what `docker login` stored: the
 configuration in `$DOCKER_CONFIG` or `~/.docker`, its credential helpers, such
@@ -173,7 +143,7 @@ ships.
 | `--mount SOURCE:/path[:overlay]` | none | Show a remote source read-only at `/path`, e.g. `hf://org/model:/model`, or a directory of this machine read-write, e.g. `.:/work`. With `:overlay`, the directory is whole inside and its writes go when the session ends. Repeatable |
 | `-e`, `--env KEY=VALUE` | none | Set a variable over the image's. `-e KEY` passes this shell's value, and leaves it out when it is unset. Repeatable |
 | `-p`, `--publish [IP:]HOSTPORT:PORT` | none | Publish a port of the environment on this machine, on `127.0.0.1` unless `IP` says otherwise. Repeatable |
-| `--user UID[:GID]` | root | Run the workload as this user and group, by number. Under `sudo`, `range x` runs as the one who ran it |
+| `--user UID[:GID]` | root | Run the workload as this user and group, by number |
 | `--gpus all` | none | Show this machine's NVIDIA GPUs inside the environment. Linux, as root |
 
 In Range's VM on a Mac, a published port reaches a server inside whether it

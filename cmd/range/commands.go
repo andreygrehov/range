@@ -23,27 +23,20 @@ import (
 	"github.com/andreygrehov/range/internal/oci"
 )
 
-// commandCommands is the command map: "range commands which pdflatex" says
-// which image a command runs from, and "range commands build", run by the
-// catalog, makes the map from the images it indexes.
+// commandCommands is the command map, for a catalog: "range commands build"
+// makes the map from the images the catalog indexes, and "range commands
+// sign" signs it.
 func commandCommands(args []string) error {
 	if len(args) == 0 {
-		return errors.New("commands: want range commands which COMMAND, or range commands build")
+		return errors.New("commands: want range commands build, or range commands sign")
 	}
 	switch args[0] {
-	case "which":
-		return commandsWhich(args[1:])
 	case "build":
 		return commandsBuild(args[1:])
 	case "sign":
 		return commandsSign(args[1:])
-	case "allow":
-		if len(args) != 2 {
-			return errors.New("commands allow: want range commands allow REPOSITORY")
-		}
-		return allow(commands.Repository(args[1]))
 	}
-	return fmt.Errorf("commands: no subcommand %q; want which, allow, build or sign", args[0])
+	return fmt.Errorf("commands: no subcommand %q; want build or sign", args[0])
 }
 
 // commandsDir is where Range keeps what it knows of command maps.
@@ -136,24 +129,6 @@ func commandsSign(args []string) error {
 		return err
 	}
 	fmt.Printf("signed %s with key %s\n", files[0], commands.KeyID(key.Public().(ed25519.PublicKey)))
-	return nil
-}
-
-func commandsWhich(args []string) error {
-	if len(args) != 1 {
-		return errors.New("commands which: want range commands which COMMAND")
-	}
-	client, err := commandsClient()
-	if err != nil {
-		return err
-	}
-	owners, err := client.Lookup(context.Background(), args[0])
-	if err != nil {
-		return fmt.Errorf("%s: %w", args[0], err)
-	}
-	for _, o := range owners {
-		fmt.Printf("%s\t%s\n", o.Repo, strings.Join(o.Platforms, ", "))
-	}
 	return nil
 }
 
