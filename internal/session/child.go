@@ -85,6 +85,11 @@ func RunChild(args []string) error {
 			return err
 		}
 	}
+	if cfg.NoNetwork {
+		if err := loopbackUp(); err != nil {
+			return err
+		}
+	}
 	// We are already in the new PID namespace, so this /proc shows only our
 	// own processes.
 	if err := tool.Run("mount", "-t", "proc", "proc", filepath.Join(cfg.Root, "proc")); err != nil {
@@ -327,7 +332,7 @@ func signalReady() {
 // Two inherited pipes carry a handshake: the child reports readiness on fd 3
 // once it is about to exec the workload, and waits on fd 4 until the parent has
 // printed its banner. Without the second half the banner races the shell prompt.
-func runInNamespaces(ctx context.Context, sessionDir string, controllingTerminal bool, onReady func(), started func(pid int)) error {
+func runInNamespaces(ctx context.Context, sessionDir string, controllingTerminal, noNetwork bool, cgroupFD int, onReady func(), started func(pid int) error) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -344,15 +349,17 @@ func runInNamespaces(ctx context.Context, sessionDir string, controllingTerminal
 	}
 	defer goWrite.Close()
 
-	cmd := exec.CommandContext(ctx, "unshare",
-		"--mount", "--uts", "--ipc", "--pid", "--fork",
-		self, ChildCommand, sessionDir)
+	namespaces := []string{"--mount", "--uts", "--ipc", "--pid", "--fork"}
+	if noNetwork {
+		namespaces = append(namespaces, "--net")
+	}
+	cmd := exec.CommandContext(ctx, "unshare", append(namespaces, self, ChildCommand, sessionDir)...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.ExtraFiles = []*os.File{readyWrite, goRead}
 	if controllingTerminal {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true, Setctty: true, Ctty: 0}
 	}
-	cmd.SysProcAttr = dieWithParent(cmd.SysProcAttr)
+	cmd.SysProcAttr = intoCgroup(dieWithParent(cmd.SysProcAttr), cgroupFD)
 	// The death signal follows the thread that starts unshare, not the
 	// process: keep this goroutine on it until unshare ends.
 	runtime.LockOSThread()
@@ -365,7 +372,11 @@ func runInNamespaces(ctx context.Context, sessionDir string, controllingTerminal
 	readyWrite.Close()
 	goRead.Close()
 	// unshare is in the session's mount namespace, and stays until it ends.
-	started(cmd.Process.Pid)
+	if err := started(cmd.Process.Pid); err != nil {
+		cmd.Process.Kill()
+		cmd.Wait()
+		return err
+	}
 
 	go func() {
 		// A closed pipe without a byte means the child died before readiness;

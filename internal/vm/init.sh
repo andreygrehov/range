@@ -21,7 +21,8 @@ ip link set lo up
 # range.net=ADDRESS/PREFIX,GATEWAY,RESOLVER comes from a host whose network
 # never changes its addresses: then there is no DHCP to wait for.
 net=$(sed -n 's/.*range\.net=\([^ ]*\).*/\1/p' /proc/cmdline)
-(
+# range.net=none: a session without a network has no device to wait for.
+[ "$net" = none ] || (
   while [ ! -e /sys/class/net/eth0 ]; do sleep 0.01; done
   if [ -n "$net" ]; then
     old_ifs=$IFS

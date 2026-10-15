@@ -12,6 +12,7 @@ import (
 	"syscall"
 
 	"github.com/andreygrehov/range/internal/core"
+	"github.com/andreygrehov/range/internal/egress"
 	"github.com/andreygrehov/range/internal/image"
 )
 
@@ -106,6 +107,14 @@ type Options struct {
 	// NVIDIA is the host's NVIDIA driver, shown inside the environment, or
 	// nil. Only the native runtime takes it.
 	NVIDIA *NVIDIA
+	// Limits bound what the session takes of this machine.
+	Limits Limits
+	// Network is NetworkNone for a session without a network of its own;
+	// Egress then lets it reach the hosts it allows, through a proxy on
+	// this machine, and EgressLog is told of each request.
+	Network   string
+	Egress    *egress.Policy
+	EgressLog func(host string, port int, allowed bool)
 	// DefaultCommand runs the environment's own command when Command is
 	// empty, instead of a shell.
 	DefaultCommand bool
@@ -159,31 +168,89 @@ func exitStatusOf(err error) error {
 	return err
 }
 
-// Select returns the runtime for this host.
+// Select returns the runtime a session gets by default on this host.
 func Select() Runtime {
+	host, _, err := Choose("", "")
+	if err != nil {
+		return Native{}
+	}
+	return host
+}
+
+// Choose returns the runtime for a session. name is --runtime, or else
+// RANGE_RUNTIME: native, kvm or vm on Linux, vz, vm or lima on a Mac. "" is
+// the default: a VM of the session's own, the security boundary the native
+// runtime is not. nativeOnly names what the session asks for that only the
+// native runtime does, such as --gpus: it picks the native runtime when none
+// is named, and refuses a VM. note is a line to show when the default could
+// not be a VM.
+func Choose(name, nativeOnly string) (host Runtime, note string, err error) {
+	if name == "" {
+		name = os.Getenv("RANGE_RUNTIME")
+	}
 	switch runtime.GOOS {
 	case "linux":
-		// Natively as root: nothing is faster. Without root, in a VM, where
-		// KVM and QEMU allow one. RANGE_RUNTIME=native or kvm chooses.
-		mode := os.Getenv("RANGE_RUNTIME")
-		if mode != "native" && (mode == "kvm" || os.Geteuid() != 0) {
-			if kvm, ok := newKVM(); ok {
-				return kvm
+		switch name {
+		case "native":
+			return Native{}, "", nil
+		case "kvm", "vm":
+			if nativeOnly != "" {
+				return nil, "", fmt.Errorf("%s needs the native runtime, not a VM: --runtime native", nativeOnly)
 			}
+			kvm, ok := newKVM()
+			if !ok {
+				return nil, "", kvmUnavailable()
+			}
+			return kvm, "", nil
+		case "":
+			if nativeOnly != "" {
+				return Native{}, "", nil
+			}
+			if kvm, ok := newKVM(); ok {
+				return kvm, "", nil
+			}
+			if os.Geteuid() == 0 {
+				note = "range: this machine cannot run Range's VM (" + kvmMissing() + "), so the session runs " +
+					"natively, which is not a security boundary. --runtime native says so; --runtime kvm requires the VM"
+			}
+			return Native{}, note, nil
 		}
-		return Native{}
+		return nil, "", fmt.Errorf("--runtime %q: on Linux, native, kvm or vm", name)
 	case "darwin":
-		// Range's own VM where this Mac and this build can boot one; Lima
-		// otherwise, or when RANGE_RUNTIME=lima asks for it.
-		if vz, ok := newVZ(); ok {
-			return vz
+		switch name {
+		case "", "vz", "vm":
+			if nativeOnly != "" {
+				return nil, "", fmt.Errorf("%s needs Linux and the native runtime", nativeOnly)
+			}
+			// Range's own VM where this Mac and this build can boot one;
+			// Lima otherwise.
+			if vz, ok := newVZ(); ok {
+				return vz, "", nil
+			}
+			if name != "" {
+				return nil, "", errors.New("--runtime vz needs an Apple silicon Mac with macOS 14 or later")
+			}
+			return lima{instance: limaInstance}, "", nil
+		case "lima":
+			return lima{instance: limaInstance}, "", nil
 		}
-		return lima{instance: limaInstance}
+		return nil, "", fmt.Errorf("--runtime %q: on a Mac, vz, vm or lima", name)
 	default:
 		// Windows runs the Linux build inside WSL2 rather than as a native
 		// binary: the namespace and nbd code has no Windows equivalent.
-		return unsupported{}
+		return unsupported{}, "", nil
 	}
+}
+
+// missing names what a runtime lacks on this host.
+func missing(host Runtime) string {
+	var names []string
+	for _, req := range host.Requirements() {
+		if !req.OK && !req.Fixable {
+			names = append(names, "no "+req.What)
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 type unsupported struct{}

@@ -9,11 +9,14 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/andreygrehov/range/internal/bytesize"
 	"github.com/andreygrehov/range/internal/core"
+	"github.com/andreygrehov/range/internal/egress"
 	"github.com/andreygrehov/range/internal/environment"
 	"github.com/andreygrehov/range/internal/oci"
 	"github.com/andreygrehov/range/internal/profile"
@@ -42,18 +45,60 @@ func commandShell(args []string) error {
 // runSession is shell and run: defaultCommand says what an empty command means.
 func runSession(args []string, defaultCommand bool) error {
 	started := time.Now()
-	// Check the host before opening the artifact: no point paying for a HEAD
-	// request against object storage if this machine cannot run an environment.
-	host := session.Select()
-	if err := session.CheckRequirements(host); err != nil {
-		return err
-	}
+	var host session.Runtime
+	var runtimeName string
 	var workdir, shellPath, upperDir, name, profileFlag, prefetchLimit, workload string
 	var keep, gpus, fromImages bool
+	var limits session.Limits
+	var timeout time.Duration
+	var network string
+	var allowHosts []string
 	var user *session.User
 	var mountSpecs, env []string
 	var ports []session.Port
-	r, c, command, err := openFromArgs("shell", args, func(fs *flag.FlagSet) {
+	// Check the host before opening the artifact: no point paying for a HEAD
+	// request against object storage if this machine cannot run an environment.
+	chooseRuntime := func() error {
+		var err error
+		var note string
+		if host, note, err = session.Choose(runtimeName, nativeOnly(gpus, name, upperDir, keep)); err != nil {
+			return err
+		}
+		if note != "" {
+			fmt.Fprintln(os.Stderr, note)
+		}
+		return session.CheckRequirements(host)
+	}
+	r, c, command, err := openFromArgsChecked("shell", args, func(fs *flag.FlagSet) {
+		fs.StringVar(&runtimeName, "runtime", "", "native, or a VM: kvm on Linux, vz on a Mac; vm is either")
+		fs.Func("cpus", "number of CPUs the session takes, such as 2 or 0.5", func(v string) (err error) {
+			limits.CPUs, err = session.ParseCPUs(v)
+			return err
+		})
+		memory := func(v string) (err error) {
+			limits.Memory, err = session.ParseMemory(v)
+			return err
+		}
+		fs.Func("memory", "memory the session takes, such as 2g", memory)
+		fs.Func("m", "short for --memory", memory)
+		fs.Func("storage-opt", "size=SIZE: the most the writable layer holds, such as size=10g", func(v string) (err error) {
+			limits.Disk, err = session.ParseStorageOpt(v)
+			return err
+		})
+		setNetwork := func(v string) (err error) {
+			network, err = session.ParseNetwork(v)
+			return err
+		}
+		fs.Func("network", "none: no network of its own; default: the network it has without this", setNetwork)
+		fs.Func("net", "short for --network", setNetwork)
+		fs.Func("allow-host", "HOST[:PORT] the session may reach, with no network of its own otherwise (repeatable)", func(v string) error {
+			allowHosts = append(allowHosts, v)
+			return nil
+		})
+		fs.Func("timeout", "end the session after this long, such as 30m, with status 124", func(v string) (err error) {
+			timeout, err = session.ParseTimeout(v)
+			return err
+		})
 		fs.Func("mount", "SOURCE:/path: a remote filesystem, read-only, or a directory of this machine, read-write (repeatable)", func(v string) error {
 			spec, _ := session.MountOption(v)
 			if _, _, err := session.ParseMount(spec); err != nil {
@@ -96,7 +141,7 @@ func runSession(args []string, defaultCommand bool) error {
 		fs.BoolVar(&keep, "keep", false, "keep this session's writable layer")
 		fs.StringVar(&profileFlag, "profile", "", "off, record or auto")
 		fs.StringVar(&prefetchLimit, "prefetch-limit", "", "ceiling on profile prefetch, e.g. 256MiB")
-	})
+	}, chooseRuntime)
 	if err != nil {
 		return err
 	}
@@ -117,6 +162,17 @@ func runSession(args []string, defaultCommand bool) error {
 	}
 	if workload == "" {
 		workload = profile.DefaultWorkload
+	}
+	// --allow-host gives a session with no network of its own a way out to
+	// those hosts, through a proxy here, where its proxy variables point.
+	var allowed *egress.Policy
+	if len(allowHosts) > 0 {
+		policy, err := egress.Parse(allowHosts)
+		if err != nil {
+			return err
+		}
+		allowed, network = &policy, session.NetworkNone
+		env = append(egress.Env(), env...)
 	}
 	caCerts, err := session.HostCACerts()
 	if err != nil {
@@ -178,6 +234,15 @@ func runSession(args []string, defaultCommand bool) error {
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(signals)
+	// --timeout ends the session as SIGTERM does, and says so.
+	var timedOut atomic.Bool
+	if timeout > 0 {
+		timer := time.AfterFunc(timeout, func() {
+			timedOut.Store(true)
+			cancel()
+		})
+		defer timer.Stop()
+	}
 	go func() {
 		for {
 			select {
@@ -217,13 +282,22 @@ func runSession(args []string, defaultCommand bool) error {
 		Reader: r, Config: c, Session: sess, Workload: workload, Workdir: workdir,
 		ShellPath: shellPath, Command: command, UpperDir: upperDir, EnvName: name, Keep: keep,
 		Mounts: mounts, Dirs: dirs, Env: env, Ports: ports, DefaultCommand: defaultCommand,
-		NVIDIA: nvidia, CACerts: caCerts, User: user, Commands: finder,
+		NVIDIA: nvidia, CACerts: caCerts, User: user, Commands: finder, Limits: limits,
+		Network: network, Egress: allowed,
 	}
 	runErr := host.Run(ctx, opts, func() {
 		sess.State = session.StateReady
 		sess.ReadyIn = time.Since(started)
 		r.ReadyIn, r.SessionName = sess.ReadyIn, sess.Name
 		printEnvironmentBanner(sess, r, sess.Meta, profileHit, priorSessions, mounts, dirs, nvidia)
+		if network == session.NetworkNone {
+			if allowed != nil {
+				bannerLine("  Network           none; allowed through a proxy: %s", strings.Join(allowed.Hosts(), ", "))
+			} else {
+				bannerLine("  Network           none")
+			}
+			bannerLine("")
+		}
 	})
 
 	// Record what this session needed before tearing anything down.
@@ -257,6 +331,10 @@ func runSession(args []string, defaultCommand bool) error {
 		log.Printf("range: cleanup: %v", err)
 	}
 	printSessionSummary(sess, r, sessionsLearned, mounts)
+	if timedOut.Load() {
+		fmt.Fprintf(os.Stderr, "range: the session reached its --timeout of %s\n", timeout)
+		return session.TimeoutStatus
+	}
 	return runErr
 }
 
@@ -359,6 +437,23 @@ func catalogProfile(ctx context.Context, r *core.Reader, c core.Config, workload
 		return profile.Profile{}, false
 	}
 	return profile.Load(c.CacheDir, r.Ident, r.BlockSize, workload)
+}
+
+// nativeOnly names the first thing a session asks for that only the native
+// runtime does, or "". Range's VM has no GPU, and keeps its writable layer in
+// its own memory, where nothing outlives it.
+func nativeOnly(gpus bool, name, upperDir string, keep bool) string {
+	switch {
+	case gpus:
+		return "--gpus"
+	case name != "":
+		return "--name"
+	case upperDir != "":
+		return "--upper-dir"
+	case keep:
+		return "--keep"
+	}
+	return ""
 }
 
 // gpuHint says how to get GPUs where the runtime cannot show them: only the

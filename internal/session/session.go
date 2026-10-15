@@ -3,6 +3,7 @@ package session
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/andreygrehov/range/internal/environment"
+	"github.com/andreygrehov/range/internal/tool"
 )
 
 // sessionConfig is what the parent hands to the re-executed child through
@@ -25,6 +27,7 @@ type sessionConfig struct {
 	Command     []string          `json:"command,omitempty"`
 	User        *User             `json:"user,omitempty"`
 	NVIDIA      *NVIDIA           `json:"nvidia,omitempty"`
+	NoNetwork   bool              `json:"no_network,omitempty"`
 }
 
 // State is where a session is in its life, as shown by range stats.
@@ -58,6 +61,7 @@ type Session struct {
 	device     string
 	Persistent bool
 	Meta       environment.Metadata
+	cgroup     *cgroup // a native session's limits, or nil
 
 	mu        sync.Mutex // guards cleanups: commands from other images push theirs as they come
 	cleanups  []func() error
@@ -128,7 +132,9 @@ func writableLayer(sess *Session, upperDir, name string, keep bool) (upper, work
 // Prepare lays out the session directories and registers their removal.
 // It runs wherever the kernel work happens: this host on Linux, the guest
 // otherwise.
-func Prepare(sess *Session, upperDir, envName string, keep bool) error {
+// A disk of more than 0 is the most the writable layer holds: the session's
+// directory is then a tmpfs of that size.
+func Prepare(sess *Session, upperDir, envName string, keep bool, disk uint64) error {
 	sess.dir = filepath.Join("/run/range", sess.ID)
 	sess.lower = filepath.Join(sess.dir, "lower")
 	sess.root = filepath.Join(sess.dir, "root")
@@ -137,11 +143,27 @@ func Prepare(sess *Session, upperDir, envName string, keep bool) error {
 		return err
 	}
 	sess.Upper, sess.work, sess.Persistent = upper, work, persistent
+	if disk > 0 {
+		if persistent {
+			return errors.New("--storage-opt size= bounds a session's own writable layer, not one that --name, --keep or --upper-dir keeps")
+		}
+		if err := os.MkdirAll(sess.dir, 0o755); err != nil {
+			return err
+		}
+		// Undone in reverse: unmounted first, then removed.
+		sess.Push(func() error { return os.RemoveAll(sess.dir) })
+		if err := tool.Run("mount", "-t", "tmpfs", "-o", fmt.Sprintf("size=%d,mode=755", disk), "range", sess.dir); err != nil {
+			return fmt.Errorf("bound the writable layer: %w", err)
+		}
+		sess.Push(func() error { return tool.Run("umount", "-l", sess.dir) })
+	}
 	for _, dir := range []string{sess.lower, sess.root, sess.Upper, sess.work} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("create %s: %w", dir, err)
 		}
 	}
-	sess.Push(func() error { return os.RemoveAll(sess.dir) })
+	if disk == 0 {
+		sess.Push(func() error { return os.RemoveAll(sess.dir) })
+	}
 	return nil
 }

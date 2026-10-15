@@ -27,8 +27,12 @@ type VZ struct {
 // StartVZ boots a VM from spec.
 func StartVZ(spec Spec) (*VZ, error) {
 	m := &VZ{stopped: make(chan struct{})}
+	cmdline := "console=hvc0 quiet loglevel=3 rdinit=/init"
+	if spec.NoNetwork {
+		cmdline += " range.net=none"
+	}
 	boot, err := vz.NewLinuxBootLoader(spec.Kernel,
-		vz.WithCommandLine("console=hvc0 quiet loglevel=3 rdinit=/init"),
+		vz.WithCommandLine(cmdline),
 		vz.WithInitrd(spec.Initrd))
 	if err != nil {
 		return nil, fmt.Errorf("boot loader: %w", err)
@@ -98,21 +102,23 @@ func StartVZ(spec Spec) (*VZ, error) {
 	}
 	config.SetDirectorySharingDevicesVirtualMachineConfiguration(shares)
 
-	nat, err := vz.NewNATNetworkDeviceAttachment()
-	if err != nil {
-		return nil, fmt.Errorf("network: %w", err)
+	if !spec.NoNetwork {
+		nat, err := vz.NewNATNetworkDeviceAttachment()
+		if err != nil {
+			return nil, fmt.Errorf("network: %w", err)
+		}
+		network, err := vz.NewVirtioNetworkDeviceConfiguration(nat)
+		if err != nil {
+			return nil, fmt.Errorf("network: %w", err)
+		}
+		mac, err := vz.NewRandomLocallyAdministeredMACAddress()
+		if err != nil {
+			return nil, fmt.Errorf("network: %w", err)
+		}
+		network.SetMACAddress(mac)
+		config.SetNetworkDevicesVirtualMachineConfiguration([]*vz.VirtioNetworkDeviceConfiguration{network})
+		m.keep = append(m.keep, nat, network, mac)
 	}
-	network, err := vz.NewVirtioNetworkDeviceConfiguration(nat)
-	if err != nil {
-		return nil, fmt.Errorf("network: %w", err)
-	}
-	mac, err := vz.NewRandomLocallyAdministeredMACAddress()
-	if err != nil {
-		return nil, fmt.Errorf("network: %w", err)
-	}
-	network.SetMACAddress(mac)
-	config.SetNetworkDevicesVirtualMachineConfiguration([]*vz.VirtioNetworkDeviceConfiguration{network})
-	m.keep = append(m.keep, nat, network, mac)
 
 	entropy, err := vz.NewVirtioEntropyDeviceConfiguration()
 	if err != nil {

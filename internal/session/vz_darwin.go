@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/andreygrehov/range/internal/image"
 	"github.com/andreygrehov/range/internal/vm"
@@ -103,6 +104,10 @@ func (vzRuntime) Run(ctx context.Context, opts Options, onReady func()) error {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, host, VMHostCommand)
+	// Ended early, by SIGTERM or --timeout, the VM's process stops its VM
+	// and puts the terminal back before it goes.
+	cmd.Cancel = func() error { return cmd.Process.Signal(syscall.SIGTERM) }
+	cmd.WaitDelay = 10 * time.Second
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	cmd.ExtraFiles = []*os.File{configRead, readyWrite, goRead}
 	if err := cmd.Start(); err != nil {

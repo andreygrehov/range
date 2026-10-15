@@ -16,6 +16,7 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/andreygrehov/range/internal/egress"
 	"github.com/andreygrehov/range/internal/relay"
 	"github.com/andreygrehov/range/internal/session"
 	"github.com/andreygrehov/range/internal/vm"
@@ -97,12 +98,20 @@ func runVMGuest() (int, error) {
 		}
 	}()
 
-	waitForResolver(3 * time.Second)
+	if cfg.NoNetwork {
+		if cfg.Egress {
+			if err := relayEgress(ports.Egress); err != nil {
+				return 1, err
+			}
+		}
+	} else {
+		waitForResolver(3 * time.Second)
+	}
 	sess := &session.Session{ID: cfg.SessionID, State: session.StateAttaching, StartedAt: time.Now()}
 	if sess.ID == "" {
 		sess.ID = session.NewID()
 	}
-	if err := session.Prepare(sess, "", "", false); err != nil {
+	if err := session.Prepare(sess, "", "", false, cfg.Disk); err != nil {
 		return 1, err
 	}
 	mounts := make([]session.Mount, len(cfg.Mounts))
@@ -352,5 +361,33 @@ func ioctl(fd, request, arg uintptr) error {
 	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, request, arg); errno != 0 {
 		return errno
 	}
+	return nil
+}
+
+// relayEgress offers the host's proxy at 127.0.0.1:3128, where the session's
+// proxy variables point: each connection goes to the host over vsock.
+func relayEgress(port uint32) error {
+	l, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", egress.Port))
+	if err != nil {
+		return fmt.Errorf("offer the session's way out: %w", err)
+	}
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				host, err := vm.DialHost(port, 5*time.Second)
+				if err != nil {
+					return
+				}
+				defer host.Close()
+				go func() { io.Copy(host, conn); vm.CloseWrite(host) }()
+				io.Copy(conn, host)
+			}()
+		}
+	}()
 	return nil
 }

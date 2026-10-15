@@ -127,6 +127,8 @@ func run(args []string) error {
 	// Invoked by range itself, never typed.
 	case session.ChildCommand:
 		return session.RunChild(args[1:])
+	case session.EgressRelayCommand:
+		return session.RunEgressRelay(args[1:])
 	case session.GuestCommand:
 		return commandGuest(args[1:])
 	case session.VMGuestCommand:

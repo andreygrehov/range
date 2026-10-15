@@ -2,6 +2,7 @@ package session
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -52,6 +53,21 @@ func vmHostConfig(opts Options, assets, initrd string, disks []string, memory ui
 		cfg.Guest.Shares = append(cfg.Guest.Shares, vm.Share{Tag: vm.ShareTag(i), Path: d.Path, Target: d.Target, Overlay: d.Overlay})
 	}
 	cfg.Guest.CACerts = opts.CACerts
+	// --cpus and --memory size the VM: a VM takes whole CPUs.
+	if cpus := opts.Limits.CPUs; cpus > 0 {
+		cfg.CPUs = uint(min(math.Ceil(cpus), float64(runtime.NumCPU())))
+	}
+	if opts.Limits.Memory > 0 {
+		cfg.Memory = opts.Limits.Memory &^ (1<<20 - 1)
+	}
+	cfg.Guest.Disk = opts.Limits.Disk
+	if opts.Network == NetworkNone {
+		cfg.Guest.NoNetwork = true
+		if opts.Egress != nil {
+			cfg.Guest.Egress, cfg.AllowHosts = true, opts.Egress.Hosts()
+			cfg.EgressLog = opts.EgressLog
+		}
+	}
 	if opts.Commands != nil {
 		cfg.Guest.Commands, cfg.ServeCommands = true, true
 		cfg.Commands = VMCommands(opts.Commands, opts.Config)

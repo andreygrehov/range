@@ -15,7 +15,7 @@ func TestPortBase(t *testing.T) {
 			t.Errorf("PortBase(%q) = %d, want %d", cmdline, got, want)
 		}
 	}
-	if p := PortsFrom(100); p != (Ports{100, 101, 102, 103, 104}) {
+	if p := PortsFrom(100); p != (Ports{100, 101, 102, 103, 104, 105, 106}) {
 		t.Errorf("PortsFrom(100) = %+v", p)
 	}
 }

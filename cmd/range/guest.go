@@ -73,7 +73,7 @@ func commandGuest(args []string) error {
 		sess.ID = session.NewID()
 	}
 	defer func() { _ = sess.Cleanup() }()
-	if err := session.Prepare(sess, "", "", false); err != nil {
+	if err := session.Prepare(sess, "", "", false, 0); err != nil {
 		return err
 	}
 	// The NBD client side runs here, in Go, so the guest needs no nbd-client.

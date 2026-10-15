@@ -129,6 +129,10 @@ func qemuArgs(spec Spec, arch, firmware string, cid, portBase uint32, shareSocke
 	if console == "" {
 		console = os.DevNull
 	}
+	network := qemuNetwork
+	if spec.NoNetwork {
+		network = "none"
+	}
 	machine := "virt"
 	if arch != "arm64" {
 		machine = "q35"
@@ -139,12 +143,14 @@ func qemuArgs(spec Spec, arch, firmware string, cid, portBase uint32, shareSocke
 		"-nodefaults", "-no-user-config", "-display", "none", "-serial", "none", "-monitor", "none",
 		"-no-reboot",
 		"-kernel", spec.Kernel, "-initrd", spec.Initrd,
-		"-append", fmt.Sprintf("console=hvc0 quiet loglevel=3 rdinit=/init range.port=%d range.net=%s", portBase, qemuNetwork),
+		"-append", fmt.Sprintf("console=hvc0 quiet loglevel=3 rdinit=/init range.port=%d range.net=%s", portBase, network),
 		"-device", "virtio-serial-pci", "-chardev", "file,id=console,path=" + console,
 		"-device", "virtconsole,chardev=console",
 		"-device", "virtio-rng-pci",
-		"-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0",
 		"-device", fmt.Sprintf("vhost-vsock-pci,guest-cid=%d", cid),
+	}
+	if !spec.NoNetwork {
+		args = append(args, "-netdev", "user,id=net0", "-device", "virtio-net-pci,netdev=net0")
 	}
 	if arch != "arm64" && firmware != "" {
 		args = append(args, "-bios", firmware)

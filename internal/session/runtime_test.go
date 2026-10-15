@@ -14,10 +14,11 @@ func TestRuntimeSelectionMatchesHost(t *testing.T) {
 	host := Select()
 	switch runtime.GOOS {
 	case "linux":
-		// Natively as root; in a VM without root, where KVM and QEMU allow it.
+		// In a VM wherever KVM and QEMU allow one, root or not; natively
+		// otherwise.
 		_, vm := newKVM()
 		want := "native"
-		if os.Geteuid() != 0 && vm {
+		if vm {
 			want = "kvm"
 		}
 		if host.Name() != want {
@@ -26,6 +27,17 @@ func TestRuntimeSelectionMatchesHost(t *testing.T) {
 		t.Setenv("RANGE_RUNTIME", "native")
 		if got := Select().Name(); got != "native" {
 			t.Fatalf("RANGE_RUNTIME=native chose %q", got)
+		}
+		t.Setenv("RANGE_RUNTIME", "")
+		// What only the native runtime does picks it, and a VM refuses it.
+		if host, _, err := Choose("", "--gpus"); err != nil || host.Name() != "native" {
+			t.Fatalf("--gpus chose %v, %v", host, err)
+		}
+		if _, _, err := Choose("kvm", "--gpus"); err == nil {
+			t.Fatal("--runtime kvm took --gpus")
+		}
+		if _, _, err := Choose("docker", ""); err == nil {
+			t.Fatal("--runtime docker was taken")
 		}
 	case "darwin":
 		// macOS is supported through a Linux VM: Range's own where the Mac

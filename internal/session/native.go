@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -63,9 +64,15 @@ func nbdRequirement(loaded, loadable bool) Requirement {
 // workload. Every extra mount gets a device of its own.
 func (Native) Run(ctx context.Context, opts Options, onReady func()) error {
 	sess, r := opts.Session, opts.Reader
-	if err := Prepare(sess, opts.UpperDir, opts.EnvName, opts.Keep); err != nil {
+	if err := Prepare(sess, opts.UpperDir, opts.EnvName, opts.Keep, opts.Limits.Disk); err != nil {
 		return err
 	}
+	cg, err := newCgroup(sess.ID, opts.Limits)
+	if err != nil {
+		return err
+	}
+	sess.cgroup = cg
+	sess.Push(cg.remove)
 	sess.State = StateAttaching
 	if err := LoadNBD(); err != nil {
 		return err
@@ -79,6 +86,9 @@ func (Native) Run(ctx context.Context, opts Options, onReady func()) error {
 		if opts.Mounts[i].Device, err = attach(sess, opts.Mounts[i].Reader); err != nil {
 			return err
 		}
+	}
+	if opts.Network == NetworkNone && len(opts.Ports) > 0 {
+		return errors.New("--publish with --network none needs Range's VM: --runtime kvm")
 	}
 	if err := publishOnHost(sess, opts.Ports); err != nil {
 		return err

@@ -105,6 +105,12 @@ func isBoolFlag(f *flag.Flag) bool {
 
 // first non-flag argument.
 func openFromArgs(name string, args []string, extra func(*flag.FlagSet)) (*core.Reader, core.Config, []string, error) {
+	return openFromArgsChecked(name, args, extra, nil)
+}
+
+// openFromArgsChecked is openFromArgs with a check of the parsed flags before
+// the artifact is opened, so a session that cannot run never asks for it.
+func openFromArgsChecked(name string, args []string, extra func(*flag.FlagSet), check func() error) (*core.Reader, core.Config, []string, error) {
 	c, err := core.ReadConfig()
 	if err != nil {
 		return nil, c, nil, err
@@ -123,6 +129,11 @@ func openFromArgs(name string, args []string, extra func(*flag.FlagSet)) (*core.
 	}
 	if c.MaxRangeSize < c.BlockSize {
 		c.MaxRangeSize = c.BlockSize
+	}
+	if check != nil {
+		if err := check(); err != nil {
+			return nil, c, nil, err
+		}
 	}
 	r, err := core.Open(context.Background(), rest[0], c)
 	if err != nil {

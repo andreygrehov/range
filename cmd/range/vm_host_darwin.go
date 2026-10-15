@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/andreygrehov/range/internal/core"
@@ -57,8 +59,18 @@ func commandVMHost(_ []string) error {
 		}
 		result <- err
 	}()
+	terminate := make(chan os.Signal, 1)
+	signal.Notify(terminate, syscall.SIGTERM)
 	select {
 	case err = <-result:
+	case <-terminate:
+		// Serve returns once the VM stops, and restores the terminal.
+		machine.Stop()
+		select {
+		case <-result:
+		case <-time.After(5 * time.Second):
+		}
+		return session.ExitStatus(128 + int(syscall.SIGTERM))
 	case <-parentGone():
 		return errors.New("range ended; stopping its vm")
 	}

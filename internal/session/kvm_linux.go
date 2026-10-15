@@ -29,6 +29,12 @@ func newKVM() (Runtime, bool) {
 
 func (kvmRuntime) Name() string { return "kvm" }
 
+// kvmUnavailable says what this host lacks for Range's VM.
+func kvmUnavailable() error { return CheckRequirements(kvmRuntime{}) }
+
+// kvmMissing names what this host lacks for Range's VM, in a few words.
+func kvmMissing() string { return missing(kvmRuntime{}) }
+
 func (kvmRuntime) Requirements() []Requirement {
 	access := func(path string) bool { return syscall.Access(path, 6 /* R_OK|W_OK */) == nil }
 	_, qemuErr := exec.LookPath(vm.QEMUBinary())

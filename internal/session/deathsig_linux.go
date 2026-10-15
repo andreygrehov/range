@@ -18,6 +18,19 @@ func dieWithParent(attr *syscall.SysProcAttr) *syscall.SysProcAttr {
 	return attr
 }
 
+// intoCgroup starts the process in the cgroup whose directory is fd, or
+// where its parent is when fd is -1.
+func intoCgroup(attr *syscall.SysProcAttr, fd int) *syscall.SysProcAttr {
+	if fd < 0 {
+		return attr
+	}
+	if attr == nil {
+		attr = &syscall.SysProcAttr{}
+	}
+	attr.UseCgroupFD, attr.CgroupFD = true, fd
+	return attr
+}
+
 // exitWithParent asks for SIGKILL when this process's parent ends. In the
 // first process of a PID namespace, that ends the whole namespace: once
 // unshare is gone, nothing of the session outlives it. The request belongs

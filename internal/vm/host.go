@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/andreygrehov/range/internal/egress"
 	"github.com/andreygrehov/range/internal/relay"
 )
 
@@ -55,6 +56,19 @@ func Serve(m Machine, cfg HostConfig, ready func()) (int, error) {
 			return 1, fmt.Errorf("serve commands from other images: %w", err)
 		}
 		defer stop()
+	}
+	if cfg.Guest.Egress {
+		policy, err := egress.Parse(cfg.AllowHosts)
+		if err != nil {
+			return 1, err
+		}
+		l, err := m.Listen(ports.Egress)
+		if err != nil {
+			return 1, fmt.Errorf("serve the session's way out: %w", err)
+		}
+		defer l.Close()
+		proxy := &egress.Proxy{Policy: policy, Log: cfg.EgressLog}
+		go proxy.Serve(l)
 	}
 	terminal := cfg.Guest.Terminal
 	listeners := map[uint32]net.Listener{}

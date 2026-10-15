@@ -147,13 +147,20 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 	if err := addCACerts(sess.root, opts.CACerts); err != nil {
 		return err
 	}
-	started := func(int) {}
+	var starts []func(pid int) error
+	if opts.Network == NetworkNone && opts.Egress != nil {
+		start, err := serveEgress(sess, opts)
+		if err != nil {
+			return err
+		}
+		starts = append(starts, start)
+	}
 	if opts.Commands != nil {
 		in, err := startInside(ctx, sess, opts)
 		if err != nil {
 			return fmt.Errorf("commands from other images: %w", err)
 		}
-		started = in.started
+		starts = append(starts, func(pid int) error { in.started(pid); return nil })
 		// After everything the environment has: its own commands come first.
 		path := meta.Environment["PATH"]
 		if path == "" {
@@ -182,7 +189,7 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 	cfg := sessionConfig{
 		Root: sess.root, Shell: meta.Shell, Workdir: meta.Workdir,
 		Hostname: meta.Hostname, Environment: meta.Environment, Command: command,
-		NVIDIA: opts.NVIDIA, User: opts.User,
+		NVIDIA: opts.NVIDIA, User: opts.User, NoNetwork: opts.Network == NetworkNone,
 	}
 	encoded, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -192,5 +199,13 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 		return err
 	}
 	sess.State = StateRunning
-	return runInNamespaces(ctx, sess.dir, opts.ControllingTerminal, onReady, started)
+	started := func(pid int) error {
+		for _, start := range starts {
+			if err := start(pid); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	return runInNamespaces(ctx, sess.dir, opts.ControllingTerminal, cfg.NoNetwork, sess.cgroup.fd(), onReady, started)
 }

@@ -23,7 +23,13 @@ const (
 	// portCommands serves the commands a session runs from other images,
 	// and from portImages on, one port each, the images they come from.
 	portCommands = 4
-	portImages   = 8
+	// portEgress carries a session's way out when it has no network: the
+	// guest relays its proxy's connections to the host's.
+	portEgress = 5
+	// portExec carries range exec and range cp: the host connects, the
+	// guest runs the command in the session.
+	portExec   = 6
+	portImages = 8
 	// portSpan is how many ports a session's base keeps: a base is a
 	// multiple of it.
 	portSpan = 64
@@ -34,11 +40,12 @@ const (
 )
 
 // Ports are the vsock ports of one session.
-type Ports struct{ Control, Stdin, Stdout, Stderr, Commands uint32 }
+type Ports struct{ Control, Stdin, Stdout, Stderr, Commands, Egress, Exec uint32 }
 
 // PortsFrom returns the ports of a session from its base.
 func PortsFrom(base uint32) Ports {
-	return Ports{base + portControl, base + portStdin, base + portStdout, base + portStderr, base + portCommands}
+	return Ports{base + portControl, base + portStdin, base + portStdout, base + portStderr,
+		base + portCommands, base + portEgress, base + portExec}
 }
 
 // PortBase reads range.port from a kernel command line, or DefaultPortBase.
@@ -79,6 +86,13 @@ type GuestConfig struct {
 	CACerts []byte `json:"ca_certs,omitempty"`
 	// User is UID:GID to run the workload as, or "".
 	User string `json:"user,omitempty"`
+	// Disk is the most the writable layer holds, in bytes, or 0.
+	Disk uint64 `json:"disk,omitempty"`
+	// NoNetwork says the VM has no network device. Egress says the host
+	// serves a proxy on the egress port, for the guest to offer at
+	// 127.0.0.1:3128.
+	NoNetwork bool `json:"no_network,omitempty"`
+	Egress    bool `json:"egress,omitempty"`
 }
 
 // Control messages after the config, one per line:
@@ -103,6 +117,8 @@ type Spec struct {
 	Console string
 	// Shares are directories of the host the guest mounts with virtiofs.
 	Shares []Share
+	// NoNetwork leaves the VM without a network device.
+	NoNetwork bool
 }
 
 // Share is a directory of the host shown read-write in the guest.
@@ -135,12 +151,17 @@ type HostConfig struct {
 	// them: a process that reads this configuration as JSON makes its own.
 	ServeCommands bool     `json:"serve_commands,omitempty"`
 	Commands      Commands `json:"-"`
+	// AllowHosts are the hosts the session may reach through the host's
+	// proxy, as --allow-host gives them, when Guest.Egress is set.
+	AllowHosts []string `json:"allow_hosts,omitempty"`
+	// EgressLog is told of each request through that proxy, or nil.
+	EgressLog func(host string, port int, allowed bool) `json:"-"`
 }
 
 // Spec is the machine cfg describes.
 func (cfg HostConfig) Spec() Spec {
 	return Spec{Kernel: cfg.Kernel, Initrd: cfg.Initrd, CPUs: cfg.CPUs, Memory: cfg.Memory,
-		Disks: cfg.Disks, Console: cfg.Console, Shares: cfg.Guest.Shares}
+		Disks: cfg.Disks, Console: cfg.Console, Shares: cfg.Guest.Shares, NoNetwork: cfg.Guest.NoNetwork}
 }
 
 // Publish is a port of the guest published on the Mac at HostIP:HostPort.
