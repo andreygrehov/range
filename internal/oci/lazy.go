@@ -45,8 +45,10 @@ type Lazy struct {
 	// what was already downloaded once. Off, reads always go to the registry,
 	// as they do for a layer whose index came from somewhere else.
 	keepLayers bool
-	// quiet leaves out the note that a layer's index came from the catalog.
-	quiet bool
+	// quiet leaves out the note that a layer's index came from the catalog,
+	// and tells indexing in one line.
+	quiet        bool
+	indexingNote sync.Once
 
 	mu     sync.Mutex
 	opened *lazyImage
@@ -261,8 +263,16 @@ func (l *Lazy) layerIndex(ctx context.Context, r resolved, i int) (*layerIndex, 
 	}
 	// fetchCatalogIndexes already asked the catalog. Whatever it could not
 	// supply is built here.
-	fmt.Fprintf(os.Stderr, "Indexing %s, layer %d/%d, %s, once\n",
-		l.image, i+1, len(r.manifest.Layers), bytesize.Format(layer.Size))
+	if l.quiet {
+		// One line, ended for a raw terminal too: a session's command
+		// waits on this while its shell holds the terminal.
+		l.indexingNote.Do(func() {
+			fmt.Fprintf(os.Stderr, "\033[2m[range] indexing %s once: the catalog has no index of it\033[0m\r\n", l.image)
+		})
+	} else {
+		fmt.Fprintf(os.Stderr, "Indexing %s, layer %d/%d, %s, once\n",
+			l.image, i+1, len(r.manifest.Layers), bytesize.Format(layer.Size))
+	}
 	keep := ""
 	if l.keepLayers {
 		keep = l.blobPath(layer.Digest)
