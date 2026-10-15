@@ -117,6 +117,25 @@ func TestAHomeRanksWhatItBrings(t *testing.T) {
 	}
 }
 
+// A home holds a command its image has even when a smaller image owns the
+// layer that brought it.
+func TestAHomeHoldsWhatItsImageHas(t *testing.T) {
+	images := []oci.ImageCommands{
+		// dns-server is built on the .NET runtime alone: the smallest image
+		// with the runtime layer r, which brings dotnet.
+		image("technitium/dns-server:13", "dr", map[string]int{"dotnet": 1}),
+		image("mcr.microsoft.com/dotnet/sdk:8.0", "drs", map[string]int{"dotnet": 1}),
+	}
+	pins := Pins{Home: map[string]bool{"mcr.microsoft.com/dotnet/sdk": true}}
+	m := Build(images, map[string]int64{"technitium/dns-server": 9e9}, pins)
+	if got := repos(m["dotnet"]); got != "[mcr.microsoft.com/dotnet/sdk technitium/dns-server]" {
+		t.Errorf("dotnet: %s", got)
+	}
+	if sdk := m["dotnet"][0]; sdk.Tag != "8.0" || fmt.Sprint(sdk.Platforms) != "[linux/amd64]" {
+		t.Errorf("the home's owner: %+v", sdk)
+	}
+}
+
 func TestRepository(t *testing.T) {
 	for in, want := range map[string]string{
 		"python:3.12": "python", "ghcr.io/org/app:1.2": "ghcr.io/org/app",

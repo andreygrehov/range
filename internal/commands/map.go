@@ -118,8 +118,32 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 		tag, path string
 	}
 	found := map[string]map[string]*candidate{}
+	// add counts a repository for a command, as seen in img.
+	add := func(command, repo string, r rank, platform string, img oci.ImageCommands) {
+		if found[command] == nil {
+			found[command] = map[string]*candidate{}
+		}
+		c := found[command][repo]
+		if c == nil {
+			c = &candidate{rank: r, platforms: map[string]bool{}}
+			found[command][repo] = c
+		}
+		if r.better(c.rank) {
+			c.rank = r
+		}
+		c.platforms[platform] = true
+		if Repository(img.Image) == repo {
+			if tag := tagOf(img.Image); c.tag == "" || tag == "latest" {
+				c.tag = tag
+			}
+			if command == img.Entrypoint && img.EntrypointPath != "" && c.path == "" {
+				c.path = img.EntrypointPath
+			}
+		}
+	}
 	for _, img := range images {
 		inOS := set(img.OS)
+		self := Repository(img.Image)
 		for command, layer := range img.Commands {
 			if inOS[command] || pins.Skip[command] || !validName.MatchString(command) {
 				continue
@@ -134,26 +158,12 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 			} else if pins.Home[repo] {
 				tier = family
 			}
-			r := rankOf(tier, pulls[repo], parent[d].layers)
-			if found[command] == nil {
-				found[command] = map[string]*candidate{}
-			}
-			c := found[command][repo]
-			if c == nil {
-				c = &candidate{rank: r, platforms: map[string]bool{}}
-				found[command][repo] = c
-			}
-			if r.better(c.rank) {
-				c.rank = r
-			}
-			c.platforms[parent[d].platform] = true
-			if Repository(img.Image) == repo {
-				if tag := tagOf(img.Image); c.tag == "" || tag == "latest" {
-					c.tag = tag
-				}
-				if command == img.Entrypoint && img.EntrypointPath != "" && c.path == "" {
-					c.path = img.EntrypointPath
-				}
+			add(command, repo, rankOf(tier, pulls[repo], parent[d].layers), parent[d].platform, img)
+			// A home holds what its image has, whoever's layer brought it:
+			// the .NET SDK holds dotnet, though an image built on the .NET
+			// runtime alone is a smaller one with that layer.
+			if pins.Home[self] && self != repo {
+				add(command, self, rankOf(family, pulls[self], len(img.Layers)), img.Platform, img)
 			}
 		}
 	}
