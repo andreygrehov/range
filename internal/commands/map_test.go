@@ -117,6 +117,24 @@ func TestAHomeRanksWhatItBrings(t *testing.T) {
 	}
 }
 
+// A home does not take a toolchain it installs from the image named for it:
+// cpp came with gcc, in gcc's own layer.
+func TestAHomeYieldsToAnOwnLayer(t *testing.T) {
+	images := []oci.ImageCommands{
+		image("gcc:16", "dg", map[string]int{"gcc": 1, "cpp": 1}),
+		image("nvidia/cuda:12-devel", "dcn", map[string]int{"gcc": 1, "cpp": 1, "nvcc": 2}),
+	}
+	pulls := map[string]int64{"gcc": 1e6, "nvidia/cuda": 9e9}
+	m := Build(images, pulls, Pins{Home: map[string]bool{"nvidia/cuda": true}})
+	for command, want := range map[string]string{
+		"gcc": "[gcc nvidia/cuda]", "cpp": "[gcc nvidia/cuda]", "nvcc": "[nvidia/cuda]",
+	} {
+		if got := repos(m[command]); got != want {
+			t.Errorf("%s: %s, want %s", command, got, want)
+		}
+	}
+}
+
 // A home holds a command its image has even when a smaller image owns the
 // layer that brought it.
 func TestAHomeHoldsWhatItsImageHas(t *testing.T) {

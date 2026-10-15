@@ -96,8 +96,10 @@ func (p Pins) Trusted(repo string) bool {
 //  5. Popularity breaks ties within those. For any other command, the
 //     smallest image that has it wins: it costs the least to fetch.
 //
-// Pins then rank a home repository as a command's family, put a chosen
-// repository first, and leave skipped commands out.
+// Pins then rank a home repository next for every command its image has,
+// put a chosen repository first, and leave skipped commands out. A home
+// ranks after rules 3 and 4, so an image that installs a toolchain does not
+// take its commands: cpp stays gcc's, though nvidia/cuda has it too.
 func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 	type parentOf struct {
 		layers   int
@@ -178,15 +180,15 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 			}
 			if n := named(command, repo); n < notNamed {
 				tier = n
-			} else if pins.Home[repo] {
-				tier = family
+			} else if pins.Home[repo] && tier == otherTier {
+				tier = home
 			}
 			add(command, repo, rankOf(tier, pulls[repo], parent[d].layers), parent[d].platform, img)
 			// A home holds what its image has, whoever's layer brought it:
 			// the .NET SDK holds dotnet, though an image built on the .NET
 			// runtime alone is a smaller one with that layer.
 			if pins.Home[self] && self != repo {
-				add(command, self, rankOf(family, pulls[self], len(img.Layers)), img.Platform, img)
+				add(command, self, rankOf(home, pulls[self], len(img.Layers)), img.Platform, img)
 			}
 		}
 	}
@@ -225,8 +227,9 @@ const (
 	exactName = iota // python for python3.12; an entrypoint
 	family           // redis for redis-cli; erlang for erl
 	notNamed
-	ownLayer  = notNamed // the command came with one named for the repository
-	otherTier = notNamed + 1
+	ownLayer  = notNamed     // the command came with one named for the repository
+	home      = notNamed + 1 // a home's image has the command
+	otherTier = notNamed + 2
 )
 
 // namedFor says how a repository is named for a command: by its exact name,
@@ -276,8 +279,8 @@ func tagOf(image string) string {
 
 // rank orders the repositories that hold a command. Lower is better.
 type rank struct {
-	tier int // exactName, family, ownLayer or otherTier
-	// For the named tiers and ownLayer, the more pulls the better. For
+	tier int // exactName, family, ownLayer, home or otherTier
+	// For the named tiers, ownLayer and home, the more pulls the better. For
 	// otherTier, the fewer layers the better, then the more pulls.
 	first, then int64
 }
