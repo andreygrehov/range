@@ -422,6 +422,9 @@ func shellQuote(arg string) string {
 	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
 }
 
+// IsTerminal says whether f is a terminal.
+func IsTerminal(f *os.File) bool { return isTerminal(f) }
+
 func isTerminal(f *os.File) bool {
 	info, err := f.Stat()
 	return err == nil && info.Mode()&os.ModeCharDevice != 0

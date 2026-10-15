@@ -115,6 +115,13 @@ type Options struct {
 	Network   string
 	Egress    *egress.Policy
 	EgressLog func(host string, port int, allowed bool)
+	// Idle runs no workload: the session waits for range exec, until range
+	// stop ends it.
+	Idle bool
+	// Control serves the session's socket for range exec, range cp and
+	// range stop. Executor runs those requests in the guest of Range's VM.
+	Control  bool
+	Executor *Executor
 	// DefaultCommand runs the environment's own command when Command is
 	// empty, instead of a shell.
 	DefaultCommand bool

@@ -12,6 +12,10 @@ func TerminalSize(fd int) (rows, cols uint16, ok bool) {
 	return size[0], size[1], errno == 0
 }
 
+// RawTerminal puts the terminal on fd in raw mode, and returns how to put
+// it back.
+func RawTerminal(fd int) func() { return rawTerminal(fd) }
+
 // rawTerminal puts the terminal in raw mode, as ssh does for a remote pty,
 // and returns how to put it back.
 func rawTerminal(fd int) func() {

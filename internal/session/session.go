@@ -28,6 +28,8 @@ type sessionConfig struct {
 	User        *User             `json:"user,omitempty"`
 	NVIDIA      *NVIDIA           `json:"nvidia,omitempty"`
 	NoNetwork   bool              `json:"no_network,omitempty"`
+	// Idle runs no workload: the session waits for range exec.
+	Idle bool `json:"idle,omitempty"`
 }
 
 // State is where a session is in its life, as shown by range stats.

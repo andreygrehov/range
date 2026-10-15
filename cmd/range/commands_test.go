@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/andreygrehov/range/internal/commands"
@@ -47,6 +48,19 @@ func TestWithVariant(t *testing.T) {
 	} {
 		if got := withVariant(c.version, c.tag); got != c.want {
 			t.Errorf("%s in %s: %s, want %s", c.version, c.tag, got, c.want)
+		}
+	}
+}
+
+func TestDockerStyleArguments(t *testing.T) {
+	if got := strings.Join(combinedShortFlags([]string{"-it", "-e", "A=1", "abc", "ls", "-la"}), " "); got != "-i -t -e A=1 abc ls -la" {
+		t.Errorf("exec flags: %s", got)
+	}
+	for arg, want := range map[string][2]string{
+		"abc:/tmp/x": {"abc", "/tmp/x"}, "./a:b": {"", "./a:b"}, "file": {"", "file"}, "-": {"", "-"},
+	} {
+		if ref, path := splitSessionPath(arg); ref != want[0] || path != want[1] {
+			t.Errorf("%s: %q %q", arg, ref, path)
 		}
 	}
 }

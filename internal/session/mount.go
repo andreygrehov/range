@@ -155,6 +155,20 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 		}
 		starts = append(starts, start)
 	}
+	executor := opts.Executor
+	if executor == nil && opts.Control {
+		executor = NewExecutor(sess, opts.Network == NetworkNone)
+	}
+	if executor != nil {
+		starts = append(starts, executor.Started)
+	}
+	if opts.Control {
+		stop, err := ServeControl(sess.ID, func(conn *os.File, _ Request, line []byte) { executor.Handle(conn, line) }, executor.Stop)
+		if err != nil {
+			return err
+		}
+		sess.Push(func() error { stop(); return nil })
+	}
 	if opts.Commands != nil {
 		in, err := startInside(ctx, sess, opts)
 		if err != nil {
@@ -190,6 +204,7 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 		Root: sess.root, Shell: meta.Shell, Workdir: meta.Workdir,
 		Hostname: meta.Hostname, Environment: meta.Environment, Command: command,
 		NVIDIA: opts.NVIDIA, User: opts.User, NoNetwork: opts.Network == NetworkNone,
+		Idle: opts.Idle,
 	}
 	encoded, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

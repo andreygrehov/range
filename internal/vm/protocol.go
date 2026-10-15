@@ -93,6 +93,8 @@ type GuestConfig struct {
 	// 127.0.0.1:3128.
 	NoNetwork bool `json:"no_network,omitempty"`
 	Egress    bool `json:"egress,omitempty"`
+	// Idle runs no workload: the session waits for range exec.
+	Idle bool `json:"idle,omitempty"`
 }
 
 // Control messages after the config, one per line:
@@ -101,6 +103,7 @@ type GuestConfig struct {
 //	host -> guest  "go"           the banner is printed; start the workload
 //	host -> guest  "resize R C"   the terminal is now R rows by C columns
 //	host -> guest  "signal N"     deliver signal N to the workload
+//	host -> guest  "stop N"       end the session: SIGTERM, SIGKILL after N s
 //	guest -> host  "exit N"       the workload exited with status N
 
 // DiskName is the guest's name for disk i: vda, vdb, ...
@@ -154,6 +157,9 @@ type HostConfig struct {
 	// AllowHosts are the hosts the session may reach through the host's
 	// proxy, as --allow-host gives them, when Guest.Egress is set.
 	AllowHosts []string `json:"allow_hosts,omitempty"`
+	// ControlSocket is where range exec, range cp and range stop reach the
+	// session, or "": each request goes on to the guest.
+	ControlSocket string `json:"control_socket,omitempty"`
 	// EgressLog is told of each request through that proxy, or nil.
 	EgressLog func(host string, port int, allowed bool) `json:"-"`
 }

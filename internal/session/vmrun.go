@@ -61,6 +61,10 @@ func vmHostConfig(opts Options, assets, initrd string, disks []string, memory ui
 		cfg.Memory = opts.Limits.Memory &^ (1<<20 - 1)
 	}
 	cfg.Guest.Disk = opts.Limits.Disk
+	cfg.Guest.Idle = opts.Idle
+	if opts.Control {
+		cfg.ControlSocket = SocketPath(opts.Session.ID)
+	}
 	if opts.Network == NetworkNone {
 		cfg.Guest.NoNetwork = true
 		if opts.Egress != nil {

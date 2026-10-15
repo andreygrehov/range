@@ -95,6 +95,16 @@ func run(args []string) error {
 		return commandRun(args[1:])
 	case "commands":
 		return commandCommands(args[1:])
+	case "exec":
+		return commandExec(args[1:])
+	case "cp":
+		return commandCp(args[1:])
+	case "ps":
+		return commandPs(args[1:])
+	case "stop":
+		return commandStop(args[1:])
+	case "logs":
+		return commandLogs(args[1:])
 	case shimCommand:
 		return commandShim(args[1], args[2:])
 	case "publish":
@@ -129,6 +139,8 @@ func run(args []string) error {
 		return session.RunChild(args[1:])
 	case session.EgressRelayCommand:
 		return session.RunEgressRelay(args[1:])
+	case session.ExecCommand:
+		return session.RunExec(args[1:])
 	case session.GuestCommand:
 		return commandGuest(args[1:])
 	case session.VMGuestCommand:

@@ -10,6 +10,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -130,6 +131,10 @@ func RunChild(args []string) error {
 		}
 	}
 
+	if cfg.Idle {
+		signalReady()
+		return idle()
+	}
 	argv := []string{cfg.Shell}
 	if len(cfg.Command) > 0 {
 		argv = cfg.Command
@@ -197,7 +202,11 @@ func mountMinimalDev(root string) error {
 		// without a terminal is not worth handing back.
 		return fmt.Errorf("devpts: %w", err)
 	}
-	_ = tool.Run("mount", "--bind", filepath.Join(dev, "pts", "ptmx"), filepath.Join(dev, "ptmx"))
+	// The private instance's ptmx, as containers have it: a terminal opened
+	// here comes from the session's own devpts.
+	if err := os.Symlink("pts/ptmx", filepath.Join(dev, "ptmx")); err != nil {
+		return fmt.Errorf("devpts: %w", err)
+	}
 	for _, link := range [][2]string{
 		{"/proc/self/fd", "fd"}, {"/proc/self/fd/0", "stdin"},
 		{"/proc/self/fd/1", "stdout"}, {"/proc/self/fd/2", "stderr"},
@@ -307,6 +316,26 @@ func provideResolvConf(root string) {
 	if err := tool.Run("mount", "--bind", source, target); err != nil {
 		log.Printf("range: could not provide DNS configuration: %v", err)
 	}
+}
+
+// idle is the first process of a session that waits for range exec: it reaps
+// what the session's commands leave behind, as an init does, and ends the
+// session on SIGTERM or SIGINT.
+func idle() error {
+	signals := make(chan os.Signal, 8)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT, syscall.SIGCHLD)
+	for sig := range signals {
+		if sig != syscall.SIGCHLD {
+			return nil
+		}
+		for {
+			var status syscall.WaitStatus
+			if pid, _ := syscall.Wait4(-1, &status, syscall.WNOHANG, nil); pid <= 0 {
+				break
+			}
+		}
+	}
+	return nil
 }
 
 // signalReady tells the parent the environment is usable and waits for it to

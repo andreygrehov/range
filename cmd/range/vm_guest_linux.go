@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/andreygrehov/range/internal/egress"
 	"github.com/andreygrehov/range/internal/relay"
@@ -72,6 +72,7 @@ func runVMGuest() (int, error) {
 	// The host answers "go" once its banner is printed, and later sends the
 	// terminal's new size whenever it changes.
 	proceed := make(chan struct{})
+	var executor atomic.Pointer[session.Executor]
 	go func() {
 		var once sync.Once
 		for {
@@ -90,10 +91,16 @@ func runVMGuest() (int, error) {
 				if sig, err := strconv.Atoi(fields[1]); err == nil {
 					syscall.Kill(-1, syscall.Signal(sig))
 				}
+			case len(fields) == 2 && fields[0] == "stop":
+				if seconds, err := strconv.Atoi(fields[1]); err == nil {
+					if e := executor.Load(); e != nil {
+						e.Stop(time.Duration(seconds) * time.Second)
+					}
+				}
 			case len(fields) == 3 && fields[0] == "resize" && streams.terminal != nil:
 				rows, _ := strconv.Atoi(fields[1])
 				cols, _ := strconv.Atoi(fields[2])
-				setWindowSize(streams.terminal, uint16(rows), uint16(cols))
+				session.SetWindowSize(streams.terminal, uint16(rows), uint16(cols))
 			}
 		}
 	}()
@@ -112,6 +119,12 @@ func runVMGuest() (int, error) {
 		sess.ID = session.NewID()
 	}
 	if err := session.Prepare(sess, "", "", false, cfg.Disk); err != nil {
+		return 1, err
+	}
+	// range exec and range cp arrive from the host on the exec port.
+	exec := session.NewExecutor(sess, false)
+	executor.Store(exec)
+	if err := serveExec(ports.Exec, exec); err != nil {
 		return 1, err
 	}
 	mounts := make([]session.Mount, len(cfg.Mounts))
@@ -140,7 +153,7 @@ func runVMGuest() (int, error) {
 		Session: sess, Workload: cfg.Workload, Workdir: cfg.Workdir, ShellPath: cfg.ShellPath,
 		Command: cfg.Command, Mounts: mounts, Dirs: dirs, Env: cfg.Env, DefaultCommand: cfg.DefaultCommand,
 		ControllingTerminal: cfg.Terminal, Tools: "/bin/busybox", LoadFilesystem: vm.LoadFilesystem,
-		CACerts: cfg.CACerts,
+		CACerts: cfg.CACerts, Idle: cfg.Idle, Executor: exec,
 	}
 	if cfg.User != "" {
 		if opts.User, err = session.ParseUser(cfg.User); err != nil {
@@ -238,11 +251,11 @@ func connectStreams(cfg vm.GuestConfig, ports vm.Ports) (*guestStreams, error) {
 		return nil, err
 	}
 	if cfg.Terminal {
-		master, slave, err := openPTY()
+		master, slave, err := session.OpenPTY()
 		if err != nil {
 			return nil, err
 		}
-		setWindowSize(master, cfg.Rows, cfg.Cols)
+		session.SetWindowSize(master, cfg.Rows, cfg.Cols)
 		for fd := 0; fd <= 2; fd++ {
 			if err := syscall.Dup3(int(slave.Fd()), fd, 0); err != nil {
 				return nil, err
@@ -326,37 +339,6 @@ func (g *guestStreams) finish() {
 	}
 }
 
-func openPTY() (master, slave *os.File, err error) {
-	master, err = os.OpenFile("/dev/ptmx", os.O_RDWR|syscall.O_NOCTTY, 0)
-	if err != nil {
-		return nil, nil, err
-	}
-	var unlock int32
-	if err := ioctl(master.Fd(), syscall.TIOCSPTLCK, uintptr(unsafe.Pointer(&unlock))); err != nil {
-		master.Close()
-		return nil, nil, fmt.Errorf("unlock pty: %w", err)
-	}
-	var n uint32
-	if err := ioctl(master.Fd(), syscall.TIOCGPTN, uintptr(unsafe.Pointer(&n))); err != nil {
-		master.Close()
-		return nil, nil, fmt.Errorf("pty number: %w", err)
-	}
-	slave, err = os.OpenFile("/dev/pts/"+strconv.Itoa(int(n)), os.O_RDWR|syscall.O_NOCTTY, 0)
-	if err != nil {
-		master.Close()
-		return nil, nil, err
-	}
-	return master, slave, nil
-}
-
-func setWindowSize(f *os.File, rows, cols uint16) {
-	if rows == 0 || cols == 0 {
-		return
-	}
-	size := [4]uint16{rows, cols, 0, 0}
-	ioctl(f.Fd(), syscall.TIOCSWINSZ, uintptr(unsafe.Pointer(&size)))
-}
-
 func ioctl(fd, request, arg uintptr) error {
 	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, fd, request, arg); errno != 0 {
 		return errno
@@ -386,6 +368,32 @@ func relayEgress(port uint32) error {
 				defer host.Close()
 				go func() { io.Copy(host, conn); vm.CloseWrite(host) }()
 				io.Copy(conn, host)
+			}()
+		}
+	}()
+	return nil
+}
+
+// serveExec takes the host's connections for range exec and range cp, and
+// runs each in the session.
+func serveExec(port uint32, exec *session.Executor) error {
+	l, err := vm.ListenHost(port)
+	if err != nil {
+		return fmt.Errorf("listen for range exec: %w", err)
+	}
+	go func() {
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				_, line, err := session.ReadRequest(conn)
+				if err != nil {
+					conn.Close()
+					return
+				}
+				exec.Handle(conn, line)
 			}()
 		}
 	}()

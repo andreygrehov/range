@@ -115,6 +115,13 @@ func Serve(m Machine, cfg HostConfig, ready func()) (int, error) {
 	if _, err := control.Write(append(line, '\n')); err != nil {
 		return 1, err
 	}
+	if cfg.ControlSocket != "" {
+		stop, err := relayControl(m, cfg.ControlSocket, ports.Exec, control)
+		if err != nil {
+			return 1, err
+		}
+		defer stop()
+	}
 	stdin, err := accept(ports.Stdin)
 	if err != nil {
 		return 1, err
@@ -221,4 +228,83 @@ func forwardResizes(control io.Writer) {
 			fmt.Fprintf(control, "resize %d %d\n", rows, cols)
 		}
 	}
+}
+
+// relayControl serves the session's socket: range stop is a control message
+// to the guest, and every other request goes to the guest's exec port, with
+// the rest of its connection.
+func relayControl(m Machine, path string, port uint32, control io.Writer) (func(), error) {
+	os.Remove(path)
+	l, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, fmt.Errorf("listen for range exec: %w", err)
+	}
+	os.Chmod(path, 0o600)
+	var mu sync.Mutex
+	var open []net.Conn
+	go func() {
+		for {
+			c, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				line, err := readLine(c)
+				if err != nil {
+					c.Close()
+					return
+				}
+				var req struct {
+					Op      string `json:"op"`
+					Timeout int    `json:"timeout"`
+				}
+				json.Unmarshal(line, &req)
+				if req.Op == "stop" {
+					fmt.Fprintf(control, "stop %d\n", max(req.Timeout, 0))
+					// The session's end closes the connection.
+					mu.Lock()
+					open = append(open, c)
+					mu.Unlock()
+					return
+				}
+				defer c.Close()
+				guest, err := m.Connect(port)
+				if err != nil {
+					return
+				}
+				defer guest.Close()
+				if _, err := guest.Write(append(line, '\n')); err != nil {
+					return
+				}
+				go io.Copy(guest, c)
+				io.Copy(c, guest)
+			}()
+		}
+	}()
+	return func() {
+		l.Close()
+		os.Remove(path)
+		mu.Lock()
+		for _, c := range open {
+			c.Close()
+		}
+		mu.Unlock()
+	}, nil
+}
+
+// readLine reads up to a newline, a byte at a time, so nothing after it is
+// taken from c.
+func readLine(c io.Reader) ([]byte, error) {
+	var line []byte
+	b := make([]byte, 1)
+	for len(line) < 1<<20 {
+		if _, err := io.ReadFull(c, b); err != nil {
+			return nil, err
+		}
+		if b[0] == '\n' {
+			return line, nil
+		}
+		line = append(line, b[0])
+	}
+	return nil, fmt.Errorf("a request line too long")
 }

@@ -45,10 +45,15 @@ func commandShell(args []string) error {
 // runSession is shell and run: defaultCommand says what an empty command means.
 func runSession(args []string, defaultCommand bool) error {
 	started := time.Now()
+	if os.Getenv(detachedEnv) != "" {
+		// fd 3 says when this detached session is ready: none of its
+		// processes is to hold it open.
+		syscall.CloseOnExec(3)
+	}
 	var host session.Runtime
 	var runtimeName string
 	var workdir, shellPath, upperDir, name, profileFlag, prefetchLimit, workload string
-	var keep, gpus, fromImages bool
+	var keep, gpus, fromImages, detach bool
 	var limits session.Limits
 	var timeout time.Duration
 	var network string
@@ -59,6 +64,9 @@ func runSession(args []string, defaultCommand bool) error {
 	// Check the host before opening the artifact: no point paying for a HEAD
 	// request against object storage if this machine cannot run an environment.
 	chooseRuntime := func() error {
+		if detach && os.Getenv(detachedEnv) == "" {
+			return errDetach
+		}
 		var err error
 		var note string
 		if host, note, err = session.Choose(runtimeName, nativeOnly(gpus, name, upperDir, keep)); err != nil {
@@ -71,6 +79,8 @@ func runSession(args []string, defaultCommand bool) error {
 	}
 	r, c, command, err := openFromArgsChecked("shell", args, func(fs *flag.FlagSet) {
 		fs.StringVar(&runtimeName, "runtime", "", "native, or a VM: kvm on Linux, vz on a Mac; vm is either")
+		fs.BoolVar(&detach, "detach", false, "run in the background and print the session's ID; with no command, wait for range exec")
+		fs.BoolVar(&detach, "d", false, "short for --detach")
 		fs.Func("cpus", "number of CPUs the session takes, such as 2 or 0.5", func(v string) (err error) {
 			limits.CPUs, err = session.ParseCPUs(v)
 			return err
@@ -142,8 +152,19 @@ func runSession(args []string, defaultCommand bool) error {
 		fs.StringVar(&profileFlag, "profile", "", "off, record or auto")
 		fs.StringVar(&prefetchLimit, "prefetch-limit", "", "ceiling on profile prefetch, e.g. 256MiB")
 	}, chooseRuntime)
+	if errors.Is(err, errDetach) {
+		return startDetached(args, defaultCommand)
+	}
 	if err != nil {
 		return err
+	}
+	if detach && host.Name() == "lima" {
+		return errors.New("--detach needs Range's own VM or a native session, not Lima")
+	}
+	// A detached session without a command waits for range exec.
+	idle := detach && len(command) == 0
+	if idle {
+		defaultCommand = false
 	}
 	defer r.Close()
 	if profileFlag != "" {
@@ -225,7 +246,24 @@ func runSession(args []string, defaultCommand bool) error {
 	}
 
 	sess := &session.Session{ID: session.NewID(), State: session.StateCreating, StartedAt: started}
+	if id := os.Getenv(detachedEnv); id != "" {
+		sess.ID = id
+	}
 	defer func() { _ = sess.Cleanup() }()
+	// range ps lists the session, and range exec, cp and stop reach it.
+	control := host.Name() != "lima"
+	if control {
+		rec := session.Record{ID: sess.ID, Name: name, Image: r.Ident.URI, Command: command, Runtime: host.Name(),
+			PID: os.Getpid(), Started: started, Detached: detach}
+		if detach {
+			rec.Log = session.LogPath(sess.ID)
+		}
+		unregister, err := session.Register(rec)
+		if err != nil {
+			return err
+		}
+		defer unregister()
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -283,9 +321,12 @@ func runSession(args []string, defaultCommand bool) error {
 		ShellPath: shellPath, Command: command, UpperDir: upperDir, EnvName: name, Keep: keep,
 		Mounts: mounts, Dirs: dirs, Env: env, Ports: ports, DefaultCommand: defaultCommand,
 		NVIDIA: nvidia, CACerts: caCerts, User: user, Commands: finder, Limits: limits,
-		Network: network, Egress: allowed,
+		Network: network, Egress: allowed, Idle: idle, Control: control,
 	}
 	runErr := host.Run(ctx, opts, func() {
+		if detach {
+			detachedReady()
+		}
 		sess.State = session.StateReady
 		sess.ReadyIn = time.Since(started)
 		r.ReadyIn, r.SessionName = sess.ReadyIn, sess.Name
