@@ -91,8 +91,40 @@ func (e *Executor) Stop(timeout time.Duration) {
 	if err != nil {
 		return
 	}
-	syscall.Kill(first, syscall.SIGTERM)
-	time.AfterFunc(timeout, func() { syscall.Kill(first, syscall.SIGKILL) })
+	// The SIGKILL may come after the session has ended by itself: a handle
+	// keeps it from reaching a process that took the number since.
+	process, err := openProcess(first)
+	if err != nil {
+		// A kernel before 5.3 has no such handle: the process's start time
+		// tells it from one that took its number since.
+		started := startTime(first)
+		syscall.Kill(first, syscall.SIGTERM)
+		time.AfterFunc(timeout, func() {
+			if started != "" && startTime(first) == started {
+				syscall.Kill(first, syscall.SIGKILL)
+			}
+		})
+		return
+	}
+	process.signal(syscall.SIGTERM)
+	time.AfterFunc(timeout, func() {
+		process.signal(syscall.SIGKILL)
+		process.close()
+	})
+}
+
+// startTime is when process pid started, in clock ticks since boot, or "".
+func startTime(pid int) string {
+	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+	if err != nil {
+		return ""
+	}
+	// The command name, in parentheses, may hold spaces: count after it.
+	fields := strings.Fields(string(data[strings.LastIndexByte(string(data), ')')+1:]))
+	if len(fields) < 20 {
+		return ""
+	}
+	return fields[19]
 }
 
 // firstProcess is the first process of the session unshare runs: the one
@@ -212,12 +244,17 @@ func RunExec(args []string) error {
 	return nil
 }
 
-// inSession resolves a path of a request against the session's workdir.
+// inSession resolves a path of a request against the session's workdir. A
+// final slash stays: it says the path is a directory.
 func inSession(path, workdir string) string {
 	if filepath.IsAbs(path) {
 		return path
 	}
-	return filepath.Join(workdir, path) + map[bool]string{true: "/", false: ""}[strings.HasSuffix(path, "/")]
+	resolved := filepath.Join(workdir, path)
+	if strings.HasSuffix(path, "/") {
+		resolved += "/"
+	}
+	return resolved
 }
 
 func copyIn(conn *os.File, req Request, workdir string) error {

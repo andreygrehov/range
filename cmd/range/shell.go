@@ -330,15 +330,14 @@ func runSession(args []string, defaultCommand bool) error {
 		sess.State = session.StateReady
 		sess.ReadyIn = time.Since(started)
 		r.ReadyIn, r.SessionName = sess.ReadyIn, sess.Name
-		printEnvironmentBanner(sess, r, sess.Meta, profileHit, priorSessions, mounts, dirs, nvidia)
-		if network == session.NetworkNone {
-			if allowed != nil {
-				bannerLine("  Network           none; allowed through a proxy: %s", strings.Join(allowed.Hosts(), ", "))
-			} else {
-				bannerLine("  Network           none")
-			}
-			bannerLine("")
+		var networkLine string
+		switch {
+		case allowed != nil:
+			networkLine = "none; through a proxy to " + strings.Join(allowed.Hosts(), ", ")
+		case network == session.NetworkNone:
+			networkLine = "none"
 		}
+		printEnvironmentBanner(sess, r, sess.Meta, profileHit, priorSessions, mounts, dirs, nvidia, networkLine)
 	})
 
 	// Record what this session needed before tearing anything down.
@@ -397,7 +396,7 @@ func bannerLine(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, format+ending, args...)
 }
 
-func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environment.Metadata, profileHit bool, priorSessions int64, mounts []session.Mount, dirs []session.Dir, nvidia *session.NVIDIA) {
+func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environment.Metadata, profileHit bool, priorSessions int64, mounts []session.Mount, dirs []session.Dir, nvidia *session.NVIDIA, network string) {
 	bannerLine("")
 	bannerLine("Range environment")
 	bannerLine("  Artifact          %s", r.Ident.URI)
@@ -414,6 +413,9 @@ func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environm
 	bannerLine("  Runtime           %s/%s", runtime.GOOS, runtime.GOARCH)
 	if nvidia != nil {
 		bannerLine("  GPUs              %d NVIDIA, driver %s", nvidia.GPUs, nvidia.Version)
+	}
+	if network != "" {
+		bannerLine("  Network           %s", network)
 	}
 	bannerLine("  Workload          %s", r.Workload)
 	if profileHit {

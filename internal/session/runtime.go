@@ -211,7 +211,10 @@ func Choose(name, nativeOnly string) (host Runtime, note string, err error) {
 			return kvm, "", nil
 		case "":
 			if nativeOnly != "" {
-				return Native{}, "", nil
+				if _, ok := newKVM(); ok {
+					note = "range: " + nativeOnly + " needs the native runtime, so this session is not in a VM"
+				}
+				return Native{}, note, nil
 			}
 			if kvm, ok := newKVM(); ok {
 				return kvm, "", nil
