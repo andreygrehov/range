@@ -163,6 +163,9 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 			meta.Environment = map[string]string{}
 		}
 		meta.Environment["PATH"] = path + ":" + InsideShims
+		// bash calls this for a command it cannot find, such as go@1.22, and
+		// takes it from the environment, as scripts' bash does too.
+		meta.Environment["BASH_FUNC_command_not_found_handle%%"] = notFoundHandler
 		// A command from another image sees the session's current directory,
 		// unless that is /, which is its image's own. So a session that
 		// names no directory starts at home, as ssh does.

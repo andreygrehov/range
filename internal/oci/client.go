@@ -368,6 +368,9 @@ func (c *client) manifestWithDigest(ctx context.Context, reference string) (mani
 		return manifest{}, "", nil, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return manifest{}, "", nil, fmt.Errorf("manifest %s: %w", reference, ErrNotFound)
+	}
 	if resp.StatusCode != http.StatusOK {
 		return manifest{}, "", nil, fmt.Errorf("manifest %s: %s", reference, resp.Status)
 	}

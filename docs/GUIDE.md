@@ -110,6 +110,28 @@ a command the environment has. A session takes commands only from official
 images and from publishers the catalog trusts. In Range's VM, on a Mac or on
 Linux without root, the host opens the image and serves it to the VM.
 
+### Another version
+
+A version picks the image's tag. Name it for one command, for the shell, or
+in the project:
+
+```bash
+root@range:~# go@1.22 version                  # golang:1.22, this once
+root@range:~# export RANGE_USE="go@1.22 python3@3.11"
+root@range:~# go version                       # golang:1.22 from now on, in scripts too
+root@range:~# cd ~/old && go version           # go.mod says go 1.21: golang:1.21
+```
+
+The first that names one wins: the command itself, then `RANGE_USE`, then the
+nearest project file, then the catalog's map. The project files are `go.mod`,
+`.nvmrc`, `.node-version`, `.python-version`, `.ruby-version`,
+`rust-toolchain.toml` and asdf's `.tool-versions`. A version applies to the
+command's whole image, so `go@1.22` gives `gofmt` 1.22 too, and keeps the
+catalog's variant: `python3@3.11` runs from `python:3.11-slim`. A tag the
+catalog has not indexed opens in some seconds the first time, while Range
+indexes it. The `command@version` form works in bash, which a session gives it
+to through the environment.
+
 ## EBS snapshots and AMIs
 
 `range shell` opens an EBS snapshot, or the root disk of an AMI, from any machine

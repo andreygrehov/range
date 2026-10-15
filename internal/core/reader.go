@@ -99,6 +99,9 @@ func Open(ctx context.Context, uri string, c Config) (*Reader, error) {
 	// above this point works on logical offsets either way, so a compressed
 	// artifact and a raw disk image are the same thing to the rest of Range.
 	packed, err := artifact.Open(ctx, b, uri)
+	if errors.Is(err, oci.ErrNotFound) {
+		return nil, fmt.Errorf("%s: no such image or tag in its registry", uri)
+	}
 	if err != nil {
 		return nil, err
 	}

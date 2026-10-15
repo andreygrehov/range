@@ -315,6 +315,7 @@ Other environment variables:
 | Variable | Purpose |
 | --- | --- |
 | `RANGE_S3_ENDPOINT` | S3-compatible endpoint (R2, MinIO). Setting it enables path-style URLs |
+| `RANGE_USE` | Inside a session with `--commands`: versions for commands from other images, such as `go@1.22 python3@3.11` |
 | `RANGE_RUNTIME` | On Linux, `native` or `kvm`: in namespaces here, or in a VM of its own. On a Mac, `lima` uses a Lima VM instead of Range's own |
 | `RANGE_VM_ASSETS` | A local copy of the VM archive (`scripts/vm-assets.sh` builds it), checked like a download |
 | `RANGE_LIMA_INSTANCE` | Lima VM to use on macOS (default `range-linux`) |

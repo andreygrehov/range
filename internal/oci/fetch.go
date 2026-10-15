@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -152,6 +153,9 @@ func resolve(ctx context.Context, image string, want Platform) (resolved, error)
 	}
 	return resolveFrom(ctx, image, ref, want)
 }
+
+// ErrNotFound says that a registry has no such image or tag.
+var ErrNotFound = errors.New("not found")
 
 // PlatformError says that an image is not built for the platform asked for.
 type PlatformError struct{ msg string }

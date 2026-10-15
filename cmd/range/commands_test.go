@@ -35,3 +35,18 @@ func TestPickOwner(t *testing.T) {
 		t.Errorf("no owner: %v", err)
 	}
 }
+
+func TestWithVariant(t *testing.T) {
+	for _, c := range []struct{ version, tag, want string }{
+		{"3.11", "3.12-slim", "3.11-slim"}, // the catalog's variant
+		{"1.22", "1.23", "1.22"},           // no variant
+		{"12.6.3", "12.8.0-devel-ubuntu24.04", "12.6.3-devel-ubuntu24.04"},
+		{"3.11-bookworm", "3.12-slim", "3.11-bookworm"}, // a variant of its own
+		{"2024", "latest", "2024"},                      // a tag that is no version
+		{"", "3.12-slim", ""},
+	} {
+		if got := withVariant(c.version, c.tag); got != c.want {
+			t.Errorf("%s in %s: %s, want %s", c.version, c.tag, got, c.want)
+		}
+	}
+}

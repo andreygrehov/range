@@ -35,6 +35,11 @@ const (
 	insideRange = insideDir + "/bin/range"
 )
 
+// notFoundHandler runs a command that names a version, as go@1.22, from the
+// image of that tag, and says any other is not found, as bash does.
+const notFoundHandler = `() { case "$1" in *?@?*) ` + insideRange + ` __shim "$@"; return ;; esac; ` +
+	`printf '%s: %s: command not found\n' "${0##*/}" "$1" >&2; return 127; }`
+
 // Finder is what a session needs of the command map.
 type Finder interface {
 	// Names lists the commands a session can run from other images.
@@ -48,6 +53,9 @@ type Finder interface {
 type InsideRequest struct {
 	Command string `json:"command"`
 	Version string `json:"version,omitempty"`
+	// Wants are the versions the shell and the project ask for, best first:
+	// they choose the version when the command names none.
+	Wants []Want `json:"wants,omitempty"`
 }
 
 // InsideReply is where the command's image is mounted in the session: Root
@@ -57,6 +65,8 @@ type InsideReply struct {
 	Root    string `json:"root,omitempty"`
 	Lower   string `json:"lower,omitempty"`
 	Program string `json:"program,omitempty"`
+	// From says where the version was asked: RANGE_USE or a project file.
+	From string `json:"from,omitempty"`
 	// First says this is the session's first command from the image.
 	First bool   `json:"first,omitempty"`
 	Error string `json:"error,omitempty"`
@@ -169,7 +179,11 @@ func (in *inside) serve(ctx context.Context, listener net.Listener) {
 }
 
 func (in *inside) handle(ctx context.Context, req InsideRequest) InsideReply {
-	image, program, err := in.finder.Find(ctx, req.Command, req.Version)
+	version, from := req.Version, ""
+	if version == "" {
+		version, from = chooseVersion(ctx, in.finder, req.Command, req.Wants)
+	}
+	image, program, err := in.finder.Find(ctx, req.Command, version)
 	if err != nil {
 		return InsideReply{Error: err.Error()}
 	}
@@ -199,7 +213,7 @@ func (in *inside) handle(ctx context.Context, req InsideRequest) InsideReply {
 	first := !img.given
 	img.given = true
 	in.mu.Unlock()
-	return InsideReply{Image: image, Root: img.root, Lower: img.lower, Program: program, First: first}
+	return InsideReply{Image: image, Root: img.root, Lower: img.lower, Program: program, From: from, First: first}
 }
 
 // attach opens image and attaches it as a block device, natively or as the

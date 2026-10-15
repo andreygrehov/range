@@ -24,7 +24,12 @@ func commandShim(name string, args []string) error {
 		return session.ExitStatus(127)
 	}
 	var reply session.InsideReply
-	err = json.NewEncoder(conn).Encode(session.InsideRequest{Command: command, Version: version})
+	req := session.InsideRequest{Command: command, Version: version}
+	if version == "" {
+		cwd, _ := os.Getwd()
+		req.Wants = session.Wanted(os.Getenv(session.UseVariable), cwd)
+	}
+	err = json.NewEncoder(conn).Encode(req)
 	if err == nil {
 		err = json.NewDecoder(conn).Decode(&reply)
 	}
@@ -37,7 +42,11 @@ func commandShim(name string, args []string) error {
 		return session.ExitStatus(127)
 	}
 	if reply.First {
-		fmt.Fprintf(os.Stderr, "\033[2m[range] %s from %s\033[0m\n", command, reply.Image)
+		why := ""
+		if reply.From != "" {
+			why = ", as " + reply.From + " asks"
+		}
+		fmt.Fprintf(os.Stderr, "\033[2m[range] %s from %s%s\033[0m\n", command, reply.Image, why)
 	}
 	return session.RunInside(reply, command, args)
 }

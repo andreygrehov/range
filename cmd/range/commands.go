@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -384,6 +385,22 @@ func (f catalogFinder) Find(ctx context.Context, command, version string) (image
 	return pickOwner(owners, f.usable, command, version)
 }
 
+// withVariant is the tag of version in the variant of the catalog's tag: 3.11
+// in 3.12-slim is 3.11-slim. A version that names a variant of its own, as
+// 3.11-bookworm does, is the tag as it is.
+func withVariant(version, tag string) string {
+	if version == "" || strings.Contains(version, "-") {
+		return version
+	}
+	number := leadingVersion.FindString(tag)
+	if number == "" {
+		return version
+	}
+	return version + tag[len(number):]
+}
+
+var leadingVersion = regexp.MustCompile(`^[0-9]+(\.[0-9]+)*`)
+
 // pickOwner takes the first owner usable says yes to. Its tag is the
 // version asked for, or the one the catalog read.
 func pickOwner(owners []commands.Owner, usable func(commands.Owner) bool, command, version string) (image, program string, err error) {
@@ -391,7 +408,7 @@ func pickOwner(owners []commands.Owner, usable func(commands.Owner) bool, comman
 		if !usable(o) {
 			continue
 		}
-		tag := version
+		tag := withVariant(version, o.Tag)
 		if tag == "" {
 			tag = o.Tag
 		}
