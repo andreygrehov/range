@@ -158,7 +158,13 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 		}
 		c.platforms[platform] = true
 		if Repository(img.Image) == repo {
-			if tag := tagOf(img.Image); c.tag == "" || tag == "latest" {
+			// The latest tag is the usual one; an image named without a
+			// tag is that tag.
+			tag := tagOf(img.Image)
+			if tag == "" {
+				tag = "latest"
+			}
+			if c.tag == "" || tag == "latest" {
 				c.tag = tag
 			}
 			if command == img.Entrypoint && img.EntrypointPath != "" && c.path == "" {

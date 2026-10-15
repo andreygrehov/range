@@ -184,3 +184,15 @@ func TestRepository(t *testing.T) {
 		}
 	}
 }
+
+// The usual tag is the latest, which an image named without a tag is, not
+// whichever tag the catalog read first.
+func TestTheUsualTagIsTheLatest(t *testing.T) {
+	images := []oci.ImageCommands{
+		image("golang:1.23", "dg", map[string]int{"go": 1}),
+		image("golang", "dh", map[string]int{"go": 1}),
+	}
+	if tag := Build(images, nil, Pins{})["go"][0].Tag; tag != "latest" {
+		t.Errorf("go: %q", tag)
+	}
+}
