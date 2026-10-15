@@ -96,13 +96,15 @@ session is as it always was.
 
 ```bash
 $ range shell ubuntu:24.04 --commands
-root@range:/work# nvcc saxpy.cu -o saxpy && ./saxpy   # nvcc from nvidia/cuda
-root@range:/work# python3 -c 'print(42)'              # from python
+root@range:~# nvcc saxpy.cu -o saxpy && ./saxpy   # nvcc from nvidia/cuda
+root@range:~# python3 -c 'print(42)'              # from python
 ```
 
 The command runs in its own image's root, so its libraries and paths are its
 own, and sees the session's current directory, `/tmp` and home at their own
-paths: what it builds runs in the session. It is a process of the session's
+paths: what it builds runs in the session. The session starts at home, unless
+the image or `--workdir` names a directory, because a command from another
+image sees its own `/` and not the session's. It is a process of the session's
 shell like any other, so pipes, Ctrl+C and the exit status work as they do for
 a command the environment has. A session takes commands only from official
 images and from publishers the catalog trusts. In Range's VM, on a Mac or on

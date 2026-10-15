@@ -163,6 +163,18 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 			meta.Environment = map[string]string{}
 		}
 		meta.Environment["PATH"] = path + ":" + InsideShims
+		// A command from another image sees the session's current directory,
+		// unless that is /, which is its image's own. So a session that
+		// names no directory starts at home, as ssh does.
+		if opts.Workdir == "" && opts.User == nil && (meta.Workdir == "" || meta.Workdir == "/") {
+			home := meta.Environment["HOME"]
+			if home == "" {
+				home = "/root"
+			}
+			if info, err := os.Lstat(filepath.Join(sess.root, home)); err == nil && info.IsDir() {
+				meta.Workdir = home
+			}
+		}
 	}
 	cfg := sessionConfig{
 		Root: sess.root, Shell: meta.Shell, Workdir: meta.Workdir,

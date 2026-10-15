@@ -133,7 +133,7 @@ ships.
 | Flag | Default | Meaning |
 | --- | --- | --- |
 | `--workload NAME` | `interactive` | Profile identity, so unrelated workloads do not collide |
-| `--workdir PATH` | from image metadata | Directory to start in |
+| `--workdir PATH` | from image metadata | Directory to start in. With `--commands`, home when the image names none |
 | `--shell PATH` | from image metadata | Shell to execute |
 | `--upper-dir PATH` | none | Where writes land. Setting it implies that they persist |
 | `--name NAME` | none | Named environment whose writes survive exit |
