@@ -45,6 +45,8 @@ type Lazy struct {
 	// what was already downloaded once. Off, reads always go to the registry,
 	// as they do for a layer whose index came from somewhere else.
 	keepLayers bool
+	// quiet leaves out the note that a layer's index came from the catalog.
+	quiet bool
 
 	mu     sync.Mutex
 	opened *lazyImage
@@ -303,6 +305,7 @@ func (l *Lazy) fetchCatalogIndexes(ctx context.Context, r resolved) {
 	wg.Wait()
 	for i, err := range errs {
 		switch {
+		case err == nil && l.quiet:
 		case err == nil:
 			fmt.Fprintf(os.Stderr, "Index of %s, layer %d/%d, from the catalog\n", l.image, i+1, len(layers))
 		case !errors.Is(err, errNotInCatalog):

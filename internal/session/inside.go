@@ -213,7 +213,9 @@ func (in *inside) attach(ctx context.Context, image string) (string, error) {
 		in.sess.Push(detach)
 		return device, nil
 	}
-	r, err := core.Open(ctx, image, in.opts.Config)
+	config := in.opts.Config
+	config.Quiet = true
+	r, err := core.Open(ctx, image, config)
 	if err != nil {
 		return "", err
 	}

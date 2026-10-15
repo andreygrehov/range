@@ -241,7 +241,9 @@ func connectStreams(cfg vm.GuestConfig, ports vm.Ports) (*guestStreams, error) {
 		}
 		slave.Close()
 		g.terminal = master
-		g.pump(master, stdin, nil)
+		// Input is not waited for at the end: it ends only when the host's
+		// does, and the host waits for the output first.
+		go io.Copy(master, stdin)
 		g.pump(stdout, master, stdout)
 		g.outputs = []*os.File{stdout}
 		return g, nil

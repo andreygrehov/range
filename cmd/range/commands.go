@@ -69,7 +69,9 @@ func commandsClient() (*commands.Client, error) {
 	sum := sha256.Sum256([]byte(base))
 	return &commands.Client{
 		Base: base, Dir: filepath.Join(dir, hex.EncodeToString(sum[:6])),
-		MaxAge: 24 * time.Hour, MaxStale: 30 * 24 * time.Hour, Keys: keys,
+		// A root is small: asking for it each hour brings a new map within
+		// the hour of its build.
+		MaxAge: time.Hour, MaxStale: 30 * 24 * time.Hour, Keys: keys,
 		HTTP: &http.Client{Timeout: 30 * time.Second},
 	}, nil
 }

@@ -84,6 +84,7 @@ func Open(ctx context.Context, uri string, c Config) (*Reader, error) {
 	if name, ok := oci.ImageName(uri); ok {
 		lazy := oci.NewLazy(name, oci.HostPlatform(), filepath.Join(c.CacheDir, "oci"))
 		lazy.SetKeepLimit(c.DiskCache)
+		lazy.SetQuiet(c.Quiet)
 		b = lazy
 	} else if hub.IsURI(uri) {
 		b = hub.New()

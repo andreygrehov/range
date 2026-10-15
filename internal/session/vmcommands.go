@@ -19,5 +19,7 @@ type vmCommands struct {
 }
 
 func (c vmCommands) Open(ctx context.Context, image string) (vm.ImageSource, error) {
-	return core.Open(ctx, image, c.config)
+	config := c.config
+	config.Quiet = true
+	return core.Open(ctx, image, config)
 }

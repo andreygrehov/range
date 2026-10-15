@@ -26,6 +26,11 @@ type Config struct {
 
 	ProfileMode   string // off, record or auto
 	PrefetchLimit int64  // ceiling on bytes pulled from a working-set profile
+
+	// Quiet leaves out the notes that need no one's attention, such as a
+	// layer's index coming from the catalog. A command a session runs from
+	// another image says once where it comes from instead.
+	Quiet bool
 }
 
 // DefaultConfig returns the settings used when nothing overrides them.

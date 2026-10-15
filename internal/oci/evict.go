@@ -19,6 +19,9 @@ const defaultKeepLimit = 10 << 30
 // SetKeepLimit sets the budget of kept layers, in bytes.
 func (l *Lazy) SetKeepLimit(bytes int64) { l.keepLimit = bytes }
 
+// SetQuiet leaves out the note that a layer's index came from the catalog.
+func (l *Lazy) SetQuiet(quiet bool) { l.quiet = quiet }
+
 // markUsed records that a kept layer is being read, for evictKept.
 func markUsed(path string) {
 	now := time.Now()

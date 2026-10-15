@@ -163,6 +163,11 @@ func ConnectKernelConn(conn Stream, device string) (disconnect func() error, err
 				ioctl(other.Fd(), ioctlDisconnect, 0)
 				other.Close()
 			}
+			// The kernel has sent the server NBD_CMD_DISC. DO_IT returns once
+			// the socket ends, and a server's close may never reach here: a
+			// host's vsock connection outlives its Close in Virtualization
+			// framework. Ending the socket here returns DO_IT at once.
+			syscall.Shutdown(sock, syscall.SHUT_RDWR)
 			select {
 			case <-done:
 			case <-time.After(5 * time.Second):
