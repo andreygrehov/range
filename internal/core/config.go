@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/andreygrehov/range/internal/bytesize"
@@ -35,15 +37,11 @@ type Config struct {
 
 // DefaultConfig returns the settings used when nothing overrides them.
 func DefaultConfig() Config {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = os.TempDir()
-	}
 	return Config{
 		BlockSize:      1 << 20,
 		MemoryCache:    64 << 20,
 		DiskCache:      10 << 30,
-		CacheDir:       filepath.Join(home, ".cache", "range"),
+		CacheDir:       filepath.Join(cacheHome(), ".cache", "range"),
 		Prefetch:       true,
 		MaxRangeSize:   8 << 20,
 		RequestTimeout: 30 * time.Second,
@@ -142,4 +140,24 @@ func ParsePrefetch(value string) (bool, error) {
 		return true, nil
 	}
 	return false, fmt.Errorf("prefetch must be on or off, got %q", value)
+}
+
+// cacheHome is the home the cache goes under. Root keeps a cache of its own:
+// under sudo -E, HOME is still the user's, and what root wrote there the
+// user could not read or replace.
+func cacheHome() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return os.TempDir()
+	}
+	if os.Geteuid() == 0 {
+		if info, err := os.Stat(home); err == nil {
+			if st, ok := info.Sys().(*syscall.Stat_t); ok && st.Uid != 0 {
+				if root, err := user.LookupId("0"); err == nil && root.HomeDir != "" {
+					return root.HomeDir
+				}
+			}
+		}
+	}
+	return home
 }

@@ -115,15 +115,26 @@ func QuietStdout(t *testing.T) {
 // non-terminal path.
 func CaptureStdout(t *testing.T) (func() string, func()) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "stdout")
+	return capture(t, &os.Stdout)
+}
+
+// CaptureStderr is CaptureStdout for standard error.
+func CaptureStderr(t *testing.T) (func() string, func()) {
+	t.Helper()
+	return capture(t, &os.Stderr)
+}
+
+func capture(t *testing.T, stream **os.File) (func() string, func()) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "out")
 	sink, err := os.Create(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	original := os.Stdout
-	os.Stdout = sink
+	original := *stream
+	*stream = sink
 	restore := func() {
-		os.Stdout = original
+		*stream = original
 		sink.Close()
 	}
 	t.Cleanup(restore)

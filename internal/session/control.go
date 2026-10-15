@@ -41,10 +41,13 @@ type Record struct {
 
 // RegistryDir is where running sessions are listed: under XDG_RUNTIME_DIR,
 // or a directory of the user's own in the temporary directory. Socket paths
-// are short there, as they must be.
+// are short there, as they must be. XDG_RUNTIME_DIR counts only when it is
+// this user's: sudo -E keeps the one of the user who ran sudo.
 func RegistryDir() string {
 	if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
-		return filepath.Join(dir, "range")
+		if info, err := os.Stat(dir); err == nil && ownedByMe(info) {
+			return filepath.Join(dir, "range")
+		}
 	}
 	return filepath.Join(os.TempDir(), fmt.Sprintf("range-%d", os.Geteuid()))
 }

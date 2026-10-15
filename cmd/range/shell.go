@@ -386,12 +386,15 @@ func runSession(args []string, defaultCommand bool) error {
 // returning the carriage, so the banner comes out as a staircase. Ending each
 // line with CRLF is correct in raw mode and invisible in cooked mode. A pipe or
 // a file still gets plain newlines so captured output stays clean.
+//
+// The banner and the summary go to standard error, as docker's own words do:
+// standard output is the workload's alone, for whatever reads it.
 func bannerLine(format string, args ...any) {
 	ending := "\n"
-	if info, err := os.Stdout.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
+	if info, err := os.Stderr.Stat(); err == nil && info.Mode()&os.ModeCharDevice != 0 {
 		ending = "\r\n"
 	}
-	fmt.Printf(format+ending, args...)
+	fmt.Fprintf(os.Stderr, format+ending, args...)
 }
 
 func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environment.Metadata, profileHit bool, priorSessions int64, mounts []session.Mount, dirs []session.Dir, nvidia *session.NVIDIA) {
@@ -424,34 +427,34 @@ func printEnvironmentBanner(sess *session.Session, r *core.Reader, meta environm
 
 func printSessionSummary(sess *session.Session, r *core.Reader, sessionsLearned int64, mounts []session.Mount) {
 	s := r.Snapshot()
-	fmt.Println()
-	fmt.Println("Range session complete")
-	fmt.Println()
-	fmt.Printf("  Artifact            %s\n", bytesize.Format(s.Size))
-	fmt.Printf("  Working set         %s\n", bytesize.Format(s.WorkingSetBytes))
-	fmt.Printf("  Working-set ratio   %.4f%%\n", s.WorkingSetRatio())
-	fmt.Printf("  Remote transfer     %s\n", bytesize.Format(s.SessionRemoteBytes))
-	fmt.Printf("  Requests            %d\n", s.SessionRequests)
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Range session complete")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  Artifact            %s\n", bytesize.Format(s.Size))
+	fmt.Fprintf(os.Stderr, "  Working set         %s\n", bytesize.Format(s.WorkingSetBytes))
+	fmt.Fprintf(os.Stderr, "  Working-set ratio   %.4f%%\n", s.WorkingSetRatio())
+	fmt.Fprintf(os.Stderr, "  Remote transfer     %s\n", bytesize.Format(s.SessionRemoteBytes))
+	fmt.Fprintf(os.Stderr, "  Requests            %d\n", s.SessionRequests)
 	if s.SessionCompressedBytes > 0 {
-		fmt.Printf("  Remote compressed   %s over %d requests\n",
+		fmt.Fprintf(os.Stderr, "  Remote compressed   %s over %d requests\n",
 			bytesize.Format(s.SessionCompressedBytes), s.SessionCompressedReqs)
-		fmt.Printf("  Network amplification %.2fx of the working set\n",
+		fmt.Fprintf(os.Stderr, "  Network amplification %.2fx of the working set\n",
 			float64(s.SessionCompressedBytes)/float64(s.WorkingSetBytes))
 	}
-	fmt.Printf("  Fetch amplification %.2fx\n", s.Amplification())
+	fmt.Fprintf(os.Stderr, "  Fetch amplification %.2fx\n", s.Amplification())
 	for _, m := range mounts {
 		ms := m.Reader.Snapshot()
-		fmt.Printf("  %-19s %s read, %s transferred, of %s\n", m.Target, bytesize.Format(ms.WorkingSetBytes),
+		fmt.Fprintf(os.Stderr, "  %-19s %s read, %s transferred, of %s\n", m.Target, bytesize.Format(ms.WorkingSetBytes),
 			bytesize.Format(ms.SessionRemoteBytes), bytesize.Format(ms.Size))
 	}
 	if sessionsLearned > 0 {
-		fmt.Printf("  Profile sessions    %d\n", sessionsLearned)
+		fmt.Fprintf(os.Stderr, "  Profile sessions    %d\n", sessionsLearned)
 	}
-	fmt.Printf("  Runtime             %s\n", roundedSeconds(time.Since(sess.StartedAt)))
+	fmt.Fprintf(os.Stderr, "  Runtime             %s\n", roundedSeconds(time.Since(sess.StartedAt)))
 	if sess.Persistent {
-		fmt.Printf("  Writable layer      %s\n", sess.Upper)
+		fmt.Fprintf(os.Stderr, "  Writable layer      %s\n", sess.Upper)
 	}
-	fmt.Println()
+	fmt.Fprintln(os.Stderr)
 }
 
 func roundedSeconds(d time.Duration) string {

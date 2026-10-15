@@ -7,9 +7,10 @@ import (
 	"github.com/andreygrehov/range/internal/rangetest"
 )
 
-// The banner must not emit CRLF when it is being captured rather than shown.
+// The banner goes to standard error, and must not emit CRLF when it is being
+// captured rather than shown.
 func TestBannerLineUsesPlainNewlineOffTerminal(t *testing.T) {
-	out, restore := rangetest.CaptureStdout(t)
+	out, restore := rangetest.CaptureStderr(t)
 	bannerLine("  Ready             %s", "1.23 s")
 	restore()
 	got := out()

@@ -56,3 +56,12 @@ func TestFindSessions(t *testing.T) {
 		t.Errorf("%d running, want 2", n)
 	}
 }
+
+// sudo -E keeps the XDG_RUNTIME_DIR of the user who ran it: root does not
+// list its sessions there.
+func TestRegistryIsMine(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", "/")
+	if os.Geteuid() != 0 && RegistryDir() == "/range" {
+		t.Error("the registry went into a directory that is not this user's")
+	}
+}
