@@ -88,6 +88,25 @@ A private image works after `docker login`: Range signs in with what Docker
 stored. Not supported yet: private or gated Hugging Face repositories, the image's `USER` (the workload runs as root), and GPUs in
 Range's VM, on a Mac or on Linux without root.
 
+## A command the environment lacks
+
+Inside a session, a command the environment does not have runs from the image
+that holds it, as the catalog's command map says:
+
+```bash
+$ range shell ubuntu:24.04
+root@range:/work# nvcc saxpy.cu -o saxpy && ./saxpy   # nvcc from nvidia/cuda
+root@range:/work# python3 -c 'print(42)'              # from python
+```
+
+The command runs in its own image's root, so its libraries and paths are its
+own, and sees the session's current directory, `/tmp` and home at their own
+paths: what it builds runs in the session. It is a process of the session's
+shell like any other, so pipes, Ctrl+C and the exit status work as they do for
+a command the environment has. A session takes commands only from official
+images and from publishers the catalog trusts. This works in sessions that run
+natively, on Linux as root, for now.
+
 ## EBS snapshots and AMIs
 
 `range shell` opens an EBS snapshot, or the root disk of an AMI, from any machine

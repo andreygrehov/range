@@ -89,6 +89,9 @@ type Options struct {
 	// LoadFilesystem loads the kernel module of a filesystem the kernel
 	// cannot load by itself, as in Range's VM, which has no modprobe.
 	LoadFilesystem func(fsType string) error
+	// Commands runs a command the environment lacks from the image that
+	// holds it, or nil.
+	Commands Finder
 	// User runs the workload as another user than root, or nil.
 	User *User
 	// CACerts are authorities this machine trusts, added to the

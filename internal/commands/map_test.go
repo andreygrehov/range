@@ -136,6 +136,26 @@ func TestAHomeHoldsWhatItsImageHas(t *testing.T) {
 	}
 }
 
+func TestTrusted(t *testing.T) {
+	pins := Pins{Trust: []string{"nvidia/cuda", "hashicorp/*", "mcr.microsoft.com/*"}}
+	for repo, want := range map[string]bool{
+		"python": true, "nvidia/cuda": true, "nvidia/cuda-other": false,
+		"hashicorp/terraform": true, "mcr.microsoft.com/dotnet/sdk": true,
+		"kasmweb/kali-rolling-desktop": false, "ghcr.io/jqlang/jq": false,
+	} {
+		if got := pins.Trusted(repo); got != want {
+			t.Errorf("Trusted(%s) = %v", repo, got)
+		}
+	}
+	m := Build([]oci.ImageCommands{
+		image("python:3.12", "dp", map[string]int{"python3": 1}),
+		image("kasmweb/desktop:1", "dk", map[string]int{"pdflatex": 1}),
+	}, nil, pins)
+	if !m["python3"][0].Trusted || m["pdflatex"][0].Trusted {
+		t.Errorf("trusted owners: %+v %+v", m["python3"][0], m["pdflatex"][0])
+	}
+}
+
 func TestRepository(t *testing.T) {
 	for in, want := range map[string]string{
 		"python:3.12": "python", "ghcr.io/org/app:1.2": "ghcr.io/org/app",

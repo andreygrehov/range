@@ -85,7 +85,7 @@ func TestNames(t *testing.T) {
 	Write(catalog, testMap(), 2, time.Now())
 	s, _ := serve(t, catalog)
 	c := &Client{Base: s.URL, Dir: t.TempDir(), MaxAge: time.Hour, HTTP: s.Client()}
-	names, err := c.Names(context.Background())
+	names, err := c.Names(context.Background(), nil)
 	if err != nil || strings.Join(names, " ") != "nvcc pdflatex python3" {
 		t.Errorf("names = %v, %v", names, err)
 	}

@@ -147,6 +147,23 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 	if err := addCACerts(sess.root, opts.CACerts); err != nil {
 		return err
 	}
+	started := func(int) {}
+	if opts.Commands != nil {
+		in, err := startInside(ctx, sess, opts)
+		if err != nil {
+			return fmt.Errorf("commands from other images: %w", err)
+		}
+		started = in.started
+		// After everything the environment has: its own commands come first.
+		path := meta.Environment["PATH"]
+		if path == "" {
+			path = defaultPath
+		}
+		if meta.Environment == nil {
+			meta.Environment = map[string]string{}
+		}
+		meta.Environment["PATH"] = path + ":" + InsideShims
+	}
 	cfg := sessionConfig{
 		Root: sess.root, Shell: meta.Shell, Workdir: meta.Workdir,
 		Hostname: meta.Hostname, Environment: meta.Environment, Command: command,
@@ -160,5 +177,5 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 		return err
 	}
 	sess.State = StateRunning
-	return runInNamespaces(ctx, sess.dir, opts.ControllingTerminal, onReady)
+	return runInNamespaces(ctx, sess.dir, opts.ControllingTerminal, onReady, started)
 }

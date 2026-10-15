@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/andreygrehov/range/internal/session"
 )
@@ -62,7 +64,13 @@ its registry, no pull), or a Hugging Face repository as hf://org/name[@revision]
 func main() {
 	log.SetFlags(0)
 	log.SetPrefix("")
-	if err := run(os.Args[1:]); err != nil {
+	args := os.Args[1:]
+	// Called by another name inside a session, range is a shim for that
+	// command.
+	if name := filepath.Base(os.Args[0]); !strings.HasPrefix(name, "range") {
+		args = append([]string{shimCommand, name}, args...)
+	}
+	if err := run(args); err != nil {
 		// A workload's own exit status is passed on, not reported as an error.
 		var status session.ExitStatus
 		if errors.As(err, &status) {
@@ -87,6 +95,8 @@ func run(args []string) error {
 		return commandRun(args[1:])
 	case "commands":
 		return commandCommands(args[1:])
+	case shimCommand:
+		return commandShim(args[1], args[2:])
 	case "publish":
 		return commandPublish(args[1:])
 	case "inspect":

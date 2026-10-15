@@ -59,6 +59,7 @@ type Session struct {
 	Persistent bool
 	Meta       environment.Metadata
 
+	mu        sync.Mutex // guards cleanups: commands from other images push theirs as they come
 	cleanups  []func() error
 	cleanOnce sync.Once
 }
@@ -73,7 +74,11 @@ func NewID() string {
 }
 
 // Push registers an undo step. Steps run in reverse order during cleanup.
-func (s *Session) Push(step func() error) { s.cleanups = append(s.cleanups, step) }
+func (s *Session) Push(step func() error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.cleanups = append(s.cleanups, step)
+}
 
 // Cleanup unwinds the session. It runs once, in reverse order, and continues
 // past failures so that one stuck unmount cannot strand an nbd device.
@@ -81,12 +86,15 @@ func (s *Session) Cleanup() error {
 	var firstErr error
 	s.cleanOnce.Do(func() {
 		s.State = StateStopping
-		for i := len(s.cleanups) - 1; i >= 0; i-- {
-			if err := s.cleanups[i](); err != nil && firstErr == nil {
+		s.mu.Lock()
+		steps := s.cleanups
+		s.cleanups = nil
+		s.mu.Unlock()
+		for i := len(steps) - 1; i >= 0; i-- {
+			if err := steps[i](); err != nil && firstErr == nil {
 				firstErr = err
 			}
 		}
-		s.cleanups = nil
 		s.State = StateStopped
 	})
 	return firstErr

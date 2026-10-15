@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -312,8 +314,8 @@ func readPulls(path string) (map[string]int64, error) {
 }
 
 // readPins reads "COMMAND REPOSITORY" lines, "* REPOSITORY" for the home of
-// what a repository brings, and "!COMMAND" for a command to leave out, with
-// # comments.
+// what a repository brings, "+ REPOSITORY" or "+ NAMESPACE/*" for one a
+// session trusts, and "!COMMAND" for a command to leave out, with # comments.
 func readPins(path string) (commands.Pins, error) {
 	pins := commands.Pins{Repo: map[string]string{}, Home: map[string]bool{}, Skip: map[string]bool{}}
 	if path == "" {
@@ -334,11 +336,74 @@ func readPins(path string) (commands.Pins, error) {
 			pins.Skip[fields[0][1:]] = true
 		case len(fields) == 2 && fields[0] == "*":
 			pins.Home[fields[1]] = true
+		case len(fields) == 2 && fields[0] == "+":
+			pins.Trust = append(pins.Trust, fields[1])
 		case len(fields) == 2:
 			pins.Repo[fields[0]] = fields[1]
 		default:
-			return pins, fmt.Errorf("%s:%d: want COMMAND REPOSITORY, * REPOSITORY or !COMMAND", path, n)
+			return pins, fmt.Errorf("%s:%d: want COMMAND REPOSITORY, * REPOSITORY, + REPOSITORY or !COMMAND", path, n)
 		}
 	}
 	return pins, s.Err()
+}
+
+// catalogFinder finds, for a session, the image of a command it lacks: the
+// first one the catalog's map trusts that is built for this platform.
+type catalogFinder struct {
+	client *commands.Client
+}
+
+func newCatalogFinder() (catalogFinder, error) {
+	client, err := commandsClient()
+	return catalogFinder{client}, err
+}
+
+// platform is what a session runs: Linux on this machine's architecture.
+func (catalogFinder) platform() string { return "linux/" + runtime.GOARCH }
+
+func (f catalogFinder) usable(o commands.Owner) bool {
+	// A map from before trust was marked trusts official images, whose
+	// names have no namespace.
+	trusted := o.Trusted || !strings.Contains(o.Repo, "/")
+	return trusted && slices.Contains(o.Platforms, f.platform())
+}
+
+func (f catalogFinder) Names(ctx context.Context) ([]string, error) {
+	return f.client.Names(ctx, func(owners []commands.Owner) bool {
+		return slices.ContainsFunc(owners, f.usable)
+	})
+}
+
+func (f catalogFinder) Find(ctx context.Context, command, version string) (image, program string, err error) {
+	owners, err := f.client.Lookup(ctx, command)
+	if err != nil {
+		return "", "", err
+	}
+	return pickOwner(owners, f.usable, command, version)
+}
+
+// pickOwner takes the first owner usable says yes to. Its tag is the
+// version asked for, or the one the catalog read.
+func pickOwner(owners []commands.Owner, usable func(commands.Owner) bool, command, version string) (image, program string, err error) {
+	for _, o := range owners {
+		if !usable(o) {
+			continue
+		}
+		tag := version
+		if tag == "" {
+			tag = o.Tag
+		}
+		if tag == "" {
+			tag = "latest"
+		}
+		program = command
+		if o.Path != "" && version == "" {
+			program = o.Path
+		}
+		return o.Repo + ":" + tag, program, nil
+	}
+	if len(owners) > 0 {
+		return "", "", fmt.Errorf("%s is in %s, which this catalog does not trust for a session, or not built for this platform", command, owners[0].Repo)
+	}
+	return "", "", commands.ErrUnknown
 }

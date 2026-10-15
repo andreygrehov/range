@@ -327,7 +327,7 @@ func signalReady() {
 // Two inherited pipes carry a handshake: the child reports readiness on fd 3
 // once it is about to exec the workload, and waits on fd 4 until the parent has
 // printed its banner. Without the second half the banner races the shell prompt.
-func runInNamespaces(ctx context.Context, sessionDir string, controllingTerminal bool, onReady func()) error {
+func runInNamespaces(ctx context.Context, sessionDir string, controllingTerminal bool, onReady func(), started func(pid int)) error {
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -364,6 +364,8 @@ func runInNamespaces(ctx context.Context, sessionDir string, controllingTerminal
 	}
 	readyWrite.Close()
 	goRead.Close()
+	// unshare is in the session's mount namespace, and stays until it ends.
+	started(cmd.Process.Pid)
 
 	go func() {
 		// A closed pipe without a byte means the child died before readiness;

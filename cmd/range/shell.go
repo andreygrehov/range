@@ -121,6 +121,14 @@ func runSession(args []string, defaultCommand bool) error {
 	if err != nil {
 		return err
 	}
+	// A command the environment lacks comes from the image that holds it,
+	// natively for now.
+	var finder session.Finder
+	if host.Name() == "native" && oci.CatalogURL() != "" {
+		if f, err := newCatalogFinder(); err == nil {
+			finder = f
+		}
+	}
 	var nvidia *session.NVIDIA
 	if gpus {
 		if host.Name() != "native" {
@@ -203,7 +211,7 @@ func runSession(args []string, defaultCommand bool) error {
 		Reader: r, Config: c, Session: sess, Workload: workload, Workdir: workdir,
 		ShellPath: shellPath, Command: command, UpperDir: upperDir, EnvName: name, Keep: keep,
 		Mounts: mounts, Dirs: dirs, Env: env, Ports: ports, DefaultCommand: defaultCommand,
-		NVIDIA: nvidia, CACerts: caCerts, User: user,
+		NVIDIA: nvidia, CACerts: caCerts, User: user, Commands: finder,
 	}
 	runErr := host.Run(ctx, opts, func() {
 		sess.State = session.StateReady

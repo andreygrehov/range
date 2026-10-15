@@ -27,6 +27,9 @@ type Owner struct {
 	// Path is where the program is when it is not on the image's PATH under
 	// its own name, as /jq is not.
 	Path string `json:"path,omitempty"`
+	// Trusted says a session may run the command from this repository
+	// unasked: an official image, or one of a publisher the catalog trusts.
+	Trusted bool `json:"trusted,omitempty"`
 }
 
 // Map lists, for each command, the repositories that hold it, best first.
@@ -52,6 +55,26 @@ type Pins struct {
 	Home map[string]bool
 	// Skip lists commands the map leaves out, such as daemons.
 	Skip map[string]bool
+	// Trust lists repositories, and publishers as "namespace/*", whose
+	// images a session runs commands from unasked, besides official ones.
+	Trust []string
+}
+
+// Trusted says whether a session runs commands from a repository unasked:
+// an official image, or one the pins trust.
+func (p Pins) Trusted(repo string) bool {
+	if !strings.Contains(repo, "/") {
+		return true // an official image: Docker Hub's library
+	}
+	for _, t := range p.Trust {
+		if t == repo {
+			return true
+		}
+		if prefix, ok := strings.CutSuffix(t, "*"); ok && strings.HasPrefix(repo, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // Build makes the map from the commands of images.
@@ -190,7 +213,8 @@ func Build(images []oci.ImageCommands, pulls map[string]int64, pins Pins) Map {
 		}
 		for _, repo := range names {
 			c := repos[repo]
-			m[command] = append(m[command], Owner{Repo: repo, Platforms: keys(c.platforms), Tag: c.tag, Path: c.path})
+			m[command] = append(m[command], Owner{Repo: repo, Platforms: keys(c.platforms), Tag: c.tag, Path: c.path,
+				Trusted: pins.Trusted(repo)})
 		}
 	}
 	return m

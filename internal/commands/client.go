@@ -57,9 +57,10 @@ func (c *Client) Lookup(ctx context.Context, command string) ([]Owner, error) {
 	return owners, nil
 }
 
-// Names returns every command in the map, sorted: what shims are made for.
-// It fetches the shards it does not have, a few at a time.
-func (c *Client) Names(ctx context.Context) ([]string, error) {
+// Names returns the commands in the map whose owners keep says yes to,
+// sorted: what shims are made for. It fetches the shards it does not have, a
+// few at a time.
+func (c *Client) Names(ctx context.Context, keep func([]Owner) bool) ([]string, error) {
 	root, err := c.root(ctx)
 	if err != nil {
 		return nil, err
@@ -86,8 +87,10 @@ func (c *Client) Names(ctx context.Context) ([]string, error) {
 				}
 				return
 			}
-			for name := range shard {
-				names = append(names, name)
+			for name, owners := range shard {
+				if keep == nil || keep(owners) {
+					names = append(names, name)
+				}
 			}
 		}()
 	}
