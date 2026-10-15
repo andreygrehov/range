@@ -37,8 +37,13 @@ func commandCommands(args []string) error {
 		return commandsBuild(args[1:])
 	case "sign":
 		return commandsSign(args[1:])
+	case "allow":
+		if len(args) != 2 {
+			return errors.New("commands allow: want range commands allow REPOSITORY")
+		}
+		return allow(commands.Repository(args[1]))
 	}
-	return fmt.Errorf("commands: no subcommand %q; want which, build or sign", args[0])
+	return fmt.Errorf("commands: no subcommand %q; want which, allow, build or sign", args[0])
 }
 
 // commandsDir is where Range keeps what it knows of command maps.

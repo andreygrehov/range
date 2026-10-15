@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"sync"
 	"time"
 )
 
@@ -53,6 +55,48 @@ func (c *Client) Lookup(ctx context.Context, command string) ([]Owner, error) {
 		return nil, ErrUnknown
 	}
 	return owners, nil
+}
+
+// Names returns every command in the map, sorted: what shims are made for.
+// It fetches the shards it does not have, a few at a time.
+func (c *Client) Names(ctx context.Context) ([]string, error) {
+	root, err := c.root(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		mu    sync.Mutex
+		names []string
+		first error
+		wg    sync.WaitGroup
+	)
+	slots := make(chan struct{}, 16)
+	for _, digest := range root.Shards {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			slots <- struct{}{}
+			defer func() { <-slots }()
+			shard, err := c.shard(ctx, digest)
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if first == nil {
+					first = err
+				}
+				return
+			}
+			for name := range shard {
+				names = append(names, name)
+			}
+		}()
+	}
+	wg.Wait()
+	if first != nil {
+		return nil, first
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 func (c *Client) root(ctx context.Context) (Root, error) {

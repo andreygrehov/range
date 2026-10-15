@@ -35,3 +35,18 @@ func TestPickOwner(t *testing.T) {
 		t.Error("an owner for another platform was picked")
 	}
 }
+
+// Away from a terminal, as in a Makefile, only an image allowed before runs
+// a command, unless it is official.
+func TestApprovalAwayFromATerminal(t *testing.T) {
+	t.Setenv("RANGE_CACHE_DIR", t.TempDir())
+	if approved("texlive/texlive:latest") {
+		t.Fatal("an image never allowed ran without a terminal")
+	}
+	if err := allow("texlive/texlive"); err != nil {
+		t.Fatal(err)
+	}
+	if !approved("texlive/texlive:2025") {
+		t.Error("an allowed repository did not run")
+	}
+}

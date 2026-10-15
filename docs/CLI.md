@@ -23,6 +23,8 @@ range mount <uri> <dir>                   # mount it read-only on this Linux hos
 range index IMAGE... [-o DIR]             # index images for a catalog, no root needed
 range x COMMAND[@VERSION] [ARGS...]       # run a command this machine does not have
 range init zsh|bash                       # run a missing command by its bare name
+range shims                               # make a shim for every command in the map
+range commands allow REPOSITORY           # let a script run commands from this image
 range commands which COMMAND              # the images that hold a command, best first
 range commands build --list FILE -o DIR   # build the command map for a catalog
 range serve <uri> [--addr HOST:PORT]      # expose it as a local URL, by range
@@ -86,10 +88,17 @@ the image that holds it, with the current directory at the same path inside.
 The catalog's command map names the image: the first one built for this
 platform. A version is a tag: `python@2.7` runs in `python:2.7`, and a command
 the map does not hold runs from the image of its name, so `gcc@4.9` runs in
-`gcc:4.9`. Before it runs a command from an image that is not an official one,
-Range asks once, at a terminal. `eval "$(range init zsh)"` in `~/.zshrc` sends
-every missing command to `range x`, so `pdflatex` works by its name. A command
-this machine has always runs as before.
+`gcc:4.9`. `eval "$(range init zsh)"` in `~/.zshrc` sends every missing command
+to `range x`, so `pdflatex` works by its name. It also puts shims at the end of
+`PATH`, one for each command in the map, so a script or a Makefile finds them
+too. `range init` refreshes them in the background once a day, and `range
+shims` does it now. A command this machine has always runs as before.
+
+Before a command runs from an image that is not an official one, Range asks
+once, at a terminal. Away from a terminal, only a repository allowed before
+runs: `range commands allow texlive/texlive` allows one. A typo in a build
+therefore never runs a stranger's image unseen. A proxy set in
+`HTTPS_PROXY`, `HTTP_PROXY` or `NO_PROXY` applies inside too.
 
 Range trusts the command map only when the catalog's key signed it, and does
 not use a map built more than 30 days ago. For a catalog of your own, give its
