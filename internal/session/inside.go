@@ -116,7 +116,11 @@ func startInside(ctx context.Context, sess *Session, opts Options) (*inside, err
 	sess.Push(listener.Close)
 	in := &inside{sess: sess, opts: opts, finder: opts.Commands, pid: make(chan struct{}),
 		images: map[string]*insideImage{}}
-	go in.makeShims(ctx, dir)
+	// The shims are there before the shell is: a command typed at once, or a
+	// script's first line, must find them.
+	if err := in.makeShims(ctx, dir); err != nil {
+		return nil, fmt.Errorf("the commands of the catalog's map: %w", err)
+	}
 	go in.serve(ctx, listener)
 	return in, nil
 }
@@ -127,22 +131,23 @@ func (in *inside) started(pid int) {
 	close(in.pid)
 }
 
-// makeShims links every command of the map to range, then swaps the links
-// in whole. It runs while the session starts, so a session never waits for
-// it.
-func (in *inside) makeShims(ctx context.Context, dir string) {
+// makeShims links every command of the map to range. With the map at hand
+// that takes some 50 ms; the first session of a day fetches its shards.
+func (in *inside) makeShims(ctx context.Context, dir string) error {
 	names, err := in.finder.Names(ctx)
 	if err != nil {
-		return
+		return err
 	}
-	fresh := filepath.Join(dir, ".shims")
-	if os.Mkdir(fresh, 0o755) != nil {
-		return
+	shims := filepath.Join(dir, filepath.Base(InsideShims))
+	if err := os.Mkdir(shims, 0o755); err != nil {
+		return err
 	}
 	for _, name := range names {
-		os.Symlink(insideRange, filepath.Join(fresh, name))
+		if err := os.Symlink(insideRange, filepath.Join(shims, name)); err != nil {
+			return err
+		}
 	}
-	os.Rename(fresh, filepath.Join(dir, filepath.Base(InsideShims)))
+	return nil
 }
 
 func (in *inside) serve(ctx context.Context, listener net.Listener) {

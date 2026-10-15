@@ -60,7 +60,13 @@ func serveCommands(ctx context.Context, m Machine, base uint32, c Commands) (sto
 	if err != nil {
 		return nil, err
 	}
-	s := &commandServer{m: m, base: base, c: c}
+	s := &commandServer{m: m, base: base, c: c, names: make(chan struct{})}
+	// The guest asks for the names first, once it has booted: they are on
+	// their way while it boots.
+	go func() {
+		s.nameList, s.namesErr = c.Names(ctx)
+		close(s.names)
+	}()
 	go func() {
 		for {
 			conn, err := l.Accept()
@@ -81,12 +87,15 @@ func serveCommands(ctx context.Context, m Machine, base uint32, c Commands) (sto
 }
 
 type commandServer struct {
-	m       Machine
-	base    uint32
-	c       Commands
-	mu      sync.Mutex
-	opened  int
-	closers []func()
+	m        Machine
+	base     uint32
+	c        Commands
+	names    chan struct{} // closed once nameList is in
+	nameList []string
+	namesErr error
+	mu       sync.Mutex
+	opened   int
+	closers  []func()
 }
 
 func (s *commandServer) answer(ctx context.Context, conn net.Conn) {
@@ -99,7 +108,8 @@ func (s *commandServer) answer(ctx context.Context, conn net.Conn) {
 	var err error
 	switch req.Op {
 	case "names":
-		reply.Names, err = s.c.Names(ctx)
+		<-s.names
+		reply.Names, err = s.nameList, s.namesErr
 	case "find":
 		reply.Image, reply.Program, err = s.c.Find(ctx, req.Command, req.Version)
 	case "open":
@@ -135,17 +145,22 @@ func (s *commandServer) open(ctx context.Context, image string) (uint32, error) 
 	s.mu.Lock()
 	s.closers = append(s.closers, func() { l.Close(); src.Close() })
 	s.mu.Unlock()
+	// The listener stays open for the session. A guest's connect that a
+	// signal interrupts leaves a connection here that the guest has given up
+	// on, and the guest then connects again.
 	go func() {
-		conn, err := l.Accept()
-		l.Close()
-		if err != nil {
-			return
+		for {
+			conn, err := l.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer conn.Close()
+				if nbd.ServerHandshake(conn, src.Size()) == nil {
+					nbd.Serve(conn, src, src.Size())
+				}
+			}()
 		}
-		defer conn.Close()
-		if err := nbd.ServerHandshake(conn, src.Size()); err != nil {
-			return
-		}
-		nbd.Serve(conn, src, src.Size())
 	}()
 	return port, nil
 }

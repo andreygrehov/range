@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"syscall"
 
@@ -20,6 +21,9 @@ var insideEnv = []string{"HOME", "TERM", "LANG", "LC_ALL", "TZ", "USER",
 // /sys, /tmp, home, current directory and resolver at their own paths. It
 // replaces this process, so the command is the shell's child, as any other.
 func RunInside(reply InsideReply, name string, args []string) error {
+	// A mount namespace is a thread's own: unshare, the mounts, chroot and
+	// exec must all run on one thread, or exec runs in the session's root.
+	runtime.LockOSThread()
 	meta := environment.ReadMetadata(reply.Lower)
 	cwd, err := os.Getwd()
 	if err != nil {
