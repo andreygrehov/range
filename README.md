@@ -173,10 +173,12 @@ measurements are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 ## Requirements
 
+- Linux with KVM: QEMU, and root or the `kvm` group. Each session runs in a VM
+  of its own, as on a Mac: the default. `virtiofsd` shares directories.
 - Linux, natively: root, a kernel with the `nbd`, `erofs` and `overlay`
   modules, which Range loads itself, and `mount` and `unshare` from util-linux.
-- Linux without root: the `kvm` group and QEMU. Each session then runs in a VM
-  of its own, as on a Mac. `virtiofsd` shares directories.
+  Range runs natively as root when the machine has no KVM, or with
+  `--runtime native`.
 - macOS: Apple silicon and macOS 14 or later. On an Intel Mac, Lima.
 - Windows: the Linux build inside WSL2, untested.
 
@@ -188,10 +190,10 @@ measurements are in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
   index them.
   Private registries and gated Hugging Face models are not supported yet.
 - Natively on Linux, an environment is not a security boundary. It runs as root
-  in namespaces on the host's network. In Range's VM, on a Mac or on Linux
-  without root, it runs under a kernel of its own, behind hardware
-  virtualization. It still reaches the network, services on this machine
-  among them, and writes to any directory you share with it.
+  in namespaces. In Range's VM, the default on a Mac and on Linux with KVM, it
+  runs under a kernel of its own, behind hardware virtualization. It reaches
+  the network, services on this machine among them, unless `--network none` or
+  `--allow-host` limits it, and writes to any directory you share with it.
 - One architecture per artifact, as with container images.
 - Artifacts are immutable. A changed object is a new artifact, and a session
   that sees its object change fails instead of mixing the two.

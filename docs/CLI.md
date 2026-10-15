@@ -19,6 +19,10 @@ range shell python:3.12                   # or any container image, from its reg
 range shell <uri> --mount hf://org/model:/model   # with a model repository inside
 range run <uri> --mount .:/work -- make           # with this directory inside, read-write
 range run <uri> [-- COMMAND...]           # run one command inside it
+range run -d <uri>                        # a session in the background: prints its ID
+range exec [-it] SESSION COMMAND...       # run a command in a running session
+range cp SRC SESSION:DEST                 # copy into a session, or out of one
+range ps | stop SESSION | logs SESSION    # list, end, read a session
 range mount <uri> <dir>                   # mount it read-only on this Linux host
 range index IMAGE... [-o DIR]             # index images for a catalog, no root needed
 range commands build --list FILE -o DIR   # build the command map for a catalog
@@ -145,12 +149,20 @@ ships.
 | `-p`, `--publish [IP:]HOSTPORT:PORT` | none | Publish a port of the environment on this machine, on `127.0.0.1` unless `IP` says otherwise. Repeatable |
 | `--user UID[:GID]` | root | Run the workload as this user and group, by number |
 | `--commands` | off | Run a command the environment lacks from the image that holds it, as the catalog's command map says |
-| `--gpus all` | none | Show this machine's NVIDIA GPUs inside the environment. Linux, as root |
+| `--gpus all` | none | Show this machine's NVIDIA GPUs inside the environment. Linux, natively |
+| `--runtime NAME` | a VM | `native`, or a VM: `kvm` on Linux, `vz` on a Mac, `vm` for either. Also `lima` on a Mac |
+| `-d`, `--detach` | off | Run in the background and print the session's ID. With no command, the session waits for `range exec` |
+| `--cpus N` | all, up to 8 in a VM | CPUs the session takes, such as `2` or `0.5`. A VM takes whole CPUs |
+| `-m`, `--memory SIZE` | a quarter of this machine, 2 to 8 GiB in a VM | Memory the session takes, such as `2g` |
+| `--storage-opt size=SIZE` | none | The most the writable layer holds, such as `size=10g` |
+| `--timeout DURATION` | none | End the session after this long, such as `30m`, with status 124 |
+| `--network none` | the default network | No network of its own. `--net` is the same flag |
+| `--allow-host HOST[:PORT]` | none | With no network of its own otherwise, reach this host through a proxy on this machine. `*.example.com` takes its subdomains. Repeatable |
 
-In Range's VM on a Mac, a published port reaches a server inside whether it
-listens on `0.0.0.0` or only on `127.0.0.1`. On Linux and in Lima, the
-environment shares the host's network, so a server inside is already on the
-host's port. Range relays only a port published under another number.
+In Range's VM, a published port reaches a server inside whether it listens on
+`0.0.0.0` or only on `127.0.0.1`, with `--network none` too. Natively and in
+Lima, the environment shares the host's network, so a server inside is already
+on the host's port. Range relays only a port published under another number.
 
 With no `COMMAND`, an interactive shell starts. With a `COMMAND`, the command
 runs non-interactively, and the exit status is the workload's:
@@ -159,8 +171,15 @@ runs non-interactively, and the exit status is the workload's:
 range shell s3://bucket/dev.range --workload go-test -- go test ./...
 ```
 
-This requires root, a kernel with the `nbd` module, which range loads, and
-`mount`, `umount`, `unshare` from util-linux. Exports are read-only. Writes land in a local overlay.
+Natively, this requires root, a kernel with the `nbd` module, which range loads,
+and `mount`, `umount`, `unshare` from util-linux. Exports are read-only. Writes
+land in a local overlay.
+
+On Linux, a session runs in a VM of its own wherever KVM and QEMU allow one, as
+root too: the VM is a security boundary, and the native runtime is not. Without
+them, as root, the session runs natively and says so. `--gpus`, `--name`,
+`--keep` and `--upper-dir` need the native runtime. They choose it when
+`--runtime` names none, and a VM refuses them.
 
 With `--gpus all`, the environment gets the GPUs' device nodes and the host
 driver's own libraries and tools, such as `libcuda.so.1` and `nvidia-smi`, as
@@ -179,6 +198,69 @@ environment. Range shares a directory of this machine read-write: on Linux with 
 bind mount, in Range's VM on a Mac with virtiofs. There, files that the workload
 writes belong to you, not to root. The Lima VM does not share directories.
 
+### Limits and the network
+
+`--cpus`, `--memory` and `--storage-opt size=` are `docker run`'s flags. In a
+VM, they size the VM. Natively, a cgroup v2 of the session's own holds the
+workload and every command that `range exec` runs in it. Range's NBD server
+stays outside it, so a busy workload cannot slow its own disk. The writable
+layer is a tmpfs of the size given.
+
+With `--network none`, a session has no network: a VM without a network
+device, or a network namespace of its own natively, with only `lo`. Commands
+from other images still come with `--commands`, because Range on this machine
+fetches them, not the session.
+
+With `--allow-host`, the session reaches the hosts named, and nothing else,
+through an HTTP proxy that Range runs on this machine. `HTTP_PROXY` and
+`HTTPS_PROXY` point to it at `127.0.0.1:3128`, so curl, git, pip, npm, go and
+cargo use it. The proxy sees each host and port. HTTPS stays end to end. A host
+alone allows ports 80 and 443. `HOST:PORT` allows that port. When this machine
+has a proxy of its own in `HTTPS_PROXY`, Range's proxy goes out through it.
+
+```bash
+range run --network none --commands ubuntu -- python3 train.py
+range run --allow-host pypi.org --allow-host files.pythonhosted.org ubuntu -- pip install requests
+```
+
+## Running sessions
+
+You use a session the way you use a container, with `docker`'s syntax.
+`SESSION` is an ID, a prefix of one that no other session shares, or the
+session's `--name`.
+
+```bash
+id=$(range run -d --commands --network none ubuntu)   # waits for range exec
+range exec $id go version                              # output and exit status
+range exec -it $id bash                                # a terminal of its own
+range cp ./src $id:/work                               # in, as docker cp
+range cp $id:/work/out ./out                           # and out
+range ps                                               # the running sessions
+range logs $id                                         # what a detached session printed
+range stop $id                                         # SIGTERM, then SIGKILL after 10 s
+```
+
+| `exec` flag | Meaning |
+| --- | --- |
+| `-i`, `--interactive` | Keep standard input open |
+| `-t`, `--tty` | Give the command a terminal. Its size and Ctrl+C follow |
+| `-e`, `--env KEY=VALUE` | Set a variable. Repeatable |
+| `-w`, `--workdir DIR` | Run the command in this directory |
+| `-u`, `--user UID[:GID]` | Run the command as this user, by number |
+
+A command runs in all of the session's namespaces and in its cgroup, with its
+environment, so `--commands`, `--memory` and `--network none` hold for it too.
+`range cp` copies as `docker cp` does: `SRC/.` copies the contents of a
+directory, `-` is a tar stream, and `-L` follows a link as `SRC`. An archive
+cannot write outside its destination, through `..` or a link it makes.
+`range stop -t SECONDS` waits that long after SIGTERM. `range logs -f` follows
+a detached session until it ends, and `range logs` still reads it afterwards.
+
+There is no daemon. Each session listens on a socket of its own in
+`$XDG_RUNTIME_DIR/range`, or in a directory of the user's own in the
+temporary directory. Only that user opens it. The range that runs the
+session serves the socket, and it goes away with the session.
+
 ## Mount
 
 ```bash
@@ -191,10 +273,11 @@ reads the files from there. `--readahead` (default `16MiB`) sets the device's
 readahead, so programs that map files, like model loaders, read in large pieces.
 
 Natively on Linux, the environment is an isolation boundary, not a security
-boundary. In Range's VM, on a Mac or on Linux without root, the workload runs
-under a kernel of its own, behind hardware virtualization, but it still reaches
-the network and any directory you share. The native environment has none of
-these controls:
+boundary. In Range's VM, the default on a Mac and on Linux with KVM, the
+workload runs under a kernel of its own, behind hardware virtualization. It
+reaches the network unless `--network none` or `--allow-host` says otherwise,
+and any directory you share. The native environment has none of these
+controls, unless you ask for them:
 
 - a user namespace
 - a network namespace
@@ -316,7 +399,7 @@ Other environment variables:
 | --- | --- |
 | `RANGE_S3_ENDPOINT` | S3-compatible endpoint (R2, MinIO). Setting it enables path-style URLs |
 | `RANGE_USE` | Inside a session with `--commands`: versions for commands from other images, such as `go@1.22 python3@3.11` |
-| `RANGE_RUNTIME` | On Linux, `native` or `kvm`: in namespaces here, or in a VM of its own. On a Mac, `lima` uses a Lima VM instead of Range's own |
+| `RANGE_RUNTIME` | The runtime when `--runtime` names none: `native`, `kvm` or `vm` on Linux, `vz`, `vm` or `lima` on a Mac |
 | `RANGE_VM_ASSETS` | A local copy of the VM archive (`scripts/vm-assets.sh` builds it), checked like a download |
 | `RANGE_LIMA_INSTANCE` | Lima VM to use on macOS (default `range-linux`) |
 

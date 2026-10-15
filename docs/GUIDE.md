@@ -28,7 +28,8 @@ non-interactively and exits with the workload's status:
 range shell s3://bucket/dev.range --workload go-test -- go test ./...
 ```
 
-`range shell` requires:
+On Linux, a session runs in a VM of its own when the machine has KVM and QEMU,
+as root or as a member of the kvm group. Natively, `range shell` requires:
 
 - root
 - the `nbd` kernel module, which range loads itself
@@ -86,7 +87,7 @@ time, because the container's cache went with the container.
 
 A private image works after `docker login`: Range signs in with what Docker
 stored. Not supported yet: private or gated Hugging Face repositories, the image's `USER` (the workload runs as root), and GPUs in
-Range's VM, on a Mac or on Linux without root.
+Range's VM. `--gpus` runs the session natively.
 
 ## A command the environment lacks
 
@@ -107,8 +108,8 @@ the image or `--workdir` names a directory, because a command from another
 image sees its own `/` and not the session's. It is a process of the session's
 shell like any other, so pipes, Ctrl+C and the exit status work as they do for
 a command the environment has. A session takes commands only from official
-images and from publishers the catalog trusts. In Range's VM, on a Mac or on
-Linux without root, the host opens the image and serves it to the VM.
+images and from publishers the catalog trusts. In Range's VM, the host opens the
+image and serves it to the VM.
 
 ### Another version
 
@@ -131,6 +132,27 @@ catalog's variant: `python3@3.11` runs from `python:3.11-slim`. A tag the
 catalog has not indexed opens in some seconds the first time, while Range
 indexes it. The `command@version` form works in bash, which a session gives it
 to through the environment.
+
+## Sandboxes for agents
+
+An agent runs many commands in one environment, reads and writes its files, and
+reaches only the hosts you allow. A session does that with `docker`'s syntax:
+
+```bash
+id=$(range run -d --commands --cpus 2 --memory 4g --timeout 2h \
+  --allow-host api.anthropic.com --allow-host pypi.org --allow-host files.pythonhosted.org \
+  ubuntu)
+range cp ./repo $id:/root/
+range exec -w /root/repo $id go test ./...     # go comes from golang, as the map says
+range exec -w /root/repo $id pip install -r requirements.txt
+range cp $id:/root/repo/report.html ./
+range stop $id
+```
+
+The session is a VM of its own. It is ready in under a second on Linux with KVM
+(0.71 s on an EC2 c5.metal), with no pull. It has the commands of the catalog's
+official and trusted images, and reaches only the hosts you allow. See [Running sessions](CLI.md#running-sessions) and
+[Limits and the network](CLI.md#limits-and-the-network).
 
 ## EBS snapshots and AMIs
 
@@ -159,8 +181,8 @@ or that another account shared with it. Copy a public one first with
 
 | Host | How it runs | Status |
 | --- | --- | --- |
-| Linux, as root | Native: nbd, EROFS, overlay, namespaces on this kernel | Verified end to end |
-| Linux, without root | A VM for each session, with QEMU and KVM: the kvm group and QEMU, no root. The environment is the VM's disk, served over NBD | Verified end to end on arm64 |
+| Linux, with KVM and QEMU | A VM for each session, as root or as a member of the kvm group. The environment is the VM's disk, served over NBD. The default | Verified end to end on x86_64 and arm64 |
+| Linux, as root, without KVM | Native: nbd, EROFS, overlay, namespaces on this kernel. Not a security boundary. `--runtime native` chooses it anywhere | Verified end to end |
 | macOS, Apple silicon | Range Core stays on the Mac. Range boots a Linux VM for each session with Virtualization.framework. The environment is the VM's disk, served from the Mac over NBD. Nothing to install | Verified end to end |
 | macOS, Intel | Range Core stays on the Mac. A Lima VM runs the environment, reached over NBD through an ssh reverse tunnel. Range creates the VM and installs a Linux build of itself on first use | Verified end to end |
 | Windows | Run the Linux build inside WSL2 | Documented, not executed |
@@ -508,9 +530,11 @@ Also not built:
 - a Go library (see [Serving over HTTP](#serving-over-http))
 - extended attributes in the EROFS writer
 
-**Natively, the environment is not a security boundary.** In Range's VM, on a Mac or on Linux
-without root, the workload runs under a kernel of its own. It still reaches the network and any
-directory you share. The native environment has:
+**Natively, the environment is not a security boundary.** That is why a session runs in Range's
+VM by default, on a Mac and on Linux wherever KVM allows it. There the workload runs under a kernel
+of its own. It reaches the network unless `--network none` or `--allow-host` says otherwise, and
+any directory you share. Natively, unless `--network none`, `--cpus` or `--memory` asks for
+them, the environment has:
 
 - no user namespace
 - no network namespace
