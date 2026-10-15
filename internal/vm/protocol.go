@@ -66,6 +66,10 @@ type GuestConfig struct {
 	Rows     uint16   `json:"rows,omitempty"`
 	Cols     uint16   `json:"cols,omitempty"`
 	Term     string   `json:"term,omitempty"`
+	// CACerts are authorities the host trusts, for the environment's bundle.
+	CACerts []byte `json:"ca_certs,omitempty"`
+	// User is UID:GID to run the workload as, or "".
+	User string `json:"user,omitempty"`
 }
 
 // Control messages after the config, one per line:

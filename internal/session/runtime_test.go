@@ -2,6 +2,7 @@ package session
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -97,6 +98,20 @@ func TestVMMemoryIsWholeMiB(t *testing.T) {
 		got := vmMemory(total)
 		if got%(1<<20) != 0 || got < 2<<30 || got > 8<<30 {
 			t.Errorf("vmMemory(%d) = %d", total, got)
+		}
+	}
+}
+
+func TestParseUser(t *testing.T) {
+	for in, want := range map[string]string{"1000": "1000:1000", "501:20": "501:20", "0:0": "0:0"} {
+		u, err := ParseUser(in)
+		if err != nil || fmt.Sprintf("%d:%d", u.UID, u.GID) != want {
+			t.Errorf("ParseUser(%q) = %+v, %v", in, u, err)
+		}
+	}
+	for _, bad := range []string{"", "me", "1000:staff", "-1", "1:-2"} {
+		if _, err := ParseUser(bad); err == nil {
+			t.Errorf("ParseUser(%q) was accepted", bad)
 		}
 	}
 }

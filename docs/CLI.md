@@ -103,6 +103,12 @@ runs: `range commands allow texlive/texlive` allows one. A typo in a build
 therefore never runs a stranger's image unseen. A proxy set in
 `HTTPS_PROXY`, `HTTP_PROXY` or `NO_PROXY` applies inside too.
 
+Range appends the authorities this machine trusts to every bundle of them in
+the environment, in the session's own layer, so a proxy that inspects TLS
+works inside too. On Linux they are the system's bundle. On a Mac, which keeps
+them in the keychain, set `RANGE_CA_FILE` to a PEM file of the ones to add.
+`RANGE_CA_FILE=none` adds none.
+
 Range trusts the command map only when the catalog's key signed it, and does
 not use a map built more than 30 days ago. For a catalog of your own, give its
 keys in `RANGE_MAP_KEYS`, base64 and comma separated, and sign its map with
@@ -167,6 +173,7 @@ ships.
 | `--mount SOURCE:/path[:overlay]` | none | Show a remote source read-only at `/path`, e.g. `hf://org/model:/model`, or a directory of this machine read-write, e.g. `.:/work`. With `:overlay`, the directory is whole inside and its writes go when the session ends. Repeatable |
 | `-e`, `--env KEY=VALUE` | none | Set a variable over the image's. `-e KEY` passes this shell's value, and leaves it out when it is unset. Repeatable |
 | `-p`, `--publish [IP:]HOSTPORT:PORT` | none | Publish a port of the environment on this machine, on `127.0.0.1` unless `IP` says otherwise. Repeatable |
+| `--user UID[:GID]` | root | Run the workload as this user and group, by number. Under `sudo`, `range x` runs as the one who ran it |
 | `--gpus all` | none | Show this machine's NVIDIA GPUs inside the environment. Linux, as root |
 
 In Range's VM on a Mac, a published port reaches a server inside whether it

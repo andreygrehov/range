@@ -144,10 +144,13 @@ func MountAndRun(ctx context.Context, opts Options, device string, onReady func(
 	}
 	sess.Meta = meta
 
+	if err := addCACerts(sess.root, opts.CACerts); err != nil {
+		return err
+	}
 	cfg := sessionConfig{
 		Root: sess.root, Shell: meta.Shell, Workdir: meta.Workdir,
 		Hostname: meta.Hostname, Environment: meta.Environment, Command: command,
-		NVIDIA: opts.NVIDIA,
+		NVIDIA: opts.NVIDIA, User: opts.User,
 	}
 	encoded, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

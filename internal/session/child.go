@@ -143,6 +143,18 @@ func RunChild(args []string) error {
 	if err := checkExecutableArch(program); err != nil {
 		return err
 	}
+	if u := cfg.User; u != nil {
+		// Groups first: once it is not root, the process cannot drop them.
+		if err := syscall.Setgroups(nil); err != nil {
+			return fmt.Errorf("run as %d:%d: %w", u.UID, u.GID, err)
+		}
+		if err := syscall.Setgid(u.GID); err != nil {
+			return fmt.Errorf("run as %d:%d: %w", u.UID, u.GID, err)
+		}
+		if err := syscall.Setuid(u.UID); err != nil {
+			return fmt.Errorf("run as %d:%d: %w", u.UID, u.GID, err)
+		}
+	}
 	signalReady()
 	return syscall.Exec(program, argv, env)
 }

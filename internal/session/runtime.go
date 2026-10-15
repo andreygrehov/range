@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -88,6 +89,11 @@ type Options struct {
 	// LoadFilesystem loads the kernel module of a filesystem the kernel
 	// cannot load by itself, as in Range's VM, which has no modprobe.
 	LoadFilesystem func(fsType string) error
+	// User runs the workload as another user than root, or nil.
+	User *User
+	// CACerts are authorities this machine trusts, added to the
+	// environment's, as HostCACerts gives them.
+	CACerts []byte
 	// Tools is a static busybox, for an environment whose own programs are
 	// built for another architecture, or "".
 	Tools string
@@ -101,6 +107,29 @@ type Options struct {
 	// standard input as its controlling terminal. Range's VM on a Mac needs
 	// it: there, Range is the first process, and no login gave it a terminal.
 	ControllingTerminal bool
+}
+
+// User is the user and group a workload runs as, by number.
+type User struct {
+	UID int `json:"uid"`
+	GID int `json:"gid"`
+}
+
+// ParseUser reads UID[:GID]. Without a GID, the group is the UID's number.
+func ParseUser(s string) (*User, error) {
+	uid, gid, hasGID := strings.Cut(s, ":")
+	u := &User{}
+	var err error
+	if u.UID, err = strconv.Atoi(uid); err != nil || u.UID < 0 {
+		return nil, fmt.Errorf("--user %q: want UID[:GID], by number", s)
+	}
+	u.GID = u.UID
+	if hasGID {
+		if u.GID, err = strconv.Atoi(gid); err != nil || u.GID < 0 {
+			return nil, fmt.Errorf("--user %q: want UID[:GID], by number", s)
+		}
+	}
+	return u, nil
 }
 
 // ExitStatus is a workload's non-zero exit status. range exits with it, so a

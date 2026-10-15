@@ -50,6 +50,7 @@ func runSession(args []string, defaultCommand bool) error {
 	}
 	var workdir, shellPath, upperDir, name, profileFlag, prefetchLimit, workload string
 	var keep, gpus bool
+	var user *session.User
 	var mountSpecs, env []string
 	var ports []session.Port
 	r, c, command, err := openFromArgs("shell", args, func(fs *flag.FlagSet) {
@@ -83,6 +84,11 @@ func runSession(args []string, defaultCommand bool) error {
 		})
 		fs.StringVar(&workload, "workload", profile.DefaultWorkload, "workload name, so profiles do not collide")
 		fs.StringVar(&workdir, "workdir", "", "working directory inside the environment")
+		fs.Func("user", "UID[:GID] to run the workload as, by number", func(v string) error {
+			u, err := session.ParseUser(v)
+			user = u
+			return err
+		})
 		fs.StringVar(&shellPath, "shell", "", "shell to execute")
 		fs.StringVar(&upperDir, "upper-dir", "", "directory holding the writable layer")
 		fs.StringVar(&name, "name", "", "named environment whose writes survive exit")
@@ -110,6 +116,10 @@ func runSession(args []string, defaultCommand bool) error {
 	}
 	if workload == "" {
 		workload = profile.DefaultWorkload
+	}
+	caCerts, err := session.HostCACerts()
+	if err != nil {
+		return err
 	}
 	var nvidia *session.NVIDIA
 	if gpus {
@@ -193,7 +203,7 @@ func runSession(args []string, defaultCommand bool) error {
 		Reader: r, Config: c, Session: sess, Workload: workload, Workdir: workdir,
 		ShellPath: shellPath, Command: command, UpperDir: upperDir, EnvName: name, Keep: keep,
 		Mounts: mounts, Dirs: dirs, Env: env, Ports: ports, DefaultCommand: defaultCommand,
-		NVIDIA: nvidia,
+		NVIDIA: nvidia, CACerts: caCerts, User: user,
 	}
 	runErr := host.Run(ctx, opts, func() {
 		sess.State = session.StateReady

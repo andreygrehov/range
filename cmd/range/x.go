@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -51,11 +52,20 @@ func commandX(args []string) error {
 	fmt.Fprintf(os.Stderr, "\033[2m[range] %s from %s\033[0m\n", args[0], image)
 	quiet, oci.Quiet = true, true
 	run := []string{"--workdir", cwd, "--workload", "x-" + name}
+	// Under sudo, the command runs as the one who ran sudo, so what it writes
+	// is theirs, not root's, and sees their home.
+	home, homeErr := os.UserHomeDir()
+	if uid, gid := os.Getenv("SUDO_UID"), os.Getenv("SUDO_GID"); os.Geteuid() == 0 && uid != "" {
+		run = append(run, "--user", uid+":"+gid)
+		if u, err := user.LookupId(uid); err == nil {
+			home, homeErr = u.HomeDir, nil
+		}
+	}
 	// The home directory is inside, at its own path, for the files a command
 	// reads there: ~/.gitconfig, ~/.kube, ~/.aws. What the command writes
 	// there goes with the session, so a Linux program never fills a Mac's
 	// home. The current directory then goes on top of it, for real.
-	if home, err := os.UserHomeDir(); err == nil && home != "/" {
+	if homeErr == nil && home != "/" {
 		run = append(run, "--mount", home+":"+home+":overlay", "-e", "HOME="+home)
 	}
 	run = append(run, "--mount", cwd+":"+cwd)

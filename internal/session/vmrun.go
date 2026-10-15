@@ -51,6 +51,10 @@ func vmHostConfig(opts Options, assets, initrd string, disks []string, memory ui
 	for i, d := range opts.Dirs {
 		cfg.Guest.Shares = append(cfg.Guest.Shares, vm.Share{Tag: vm.ShareTag(i), Path: d.Path, Target: d.Target, Overlay: d.Overlay})
 	}
+	cfg.Guest.CACerts = opts.CACerts
+	if u := opts.User; u != nil {
+		cfg.Guest.User = fmt.Sprintf("%d:%d", u.UID, u.GID)
+	}
 	for _, p := range opts.Ports {
 		cfg.Guest.Ports = append(cfg.Guest.Ports, p.Port)
 		cfg.Publish = append(cfg.Publish, vm.Publish{HostIP: p.HostIP, HostPort: p.HostPort})

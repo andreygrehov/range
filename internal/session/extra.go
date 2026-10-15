@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/andreygrehov/range/internal/core"
 	"github.com/andreygrehov/range/internal/tool"
@@ -77,6 +78,14 @@ func bindDirs(sess *Session, dirs []Dir) error {
 				if err := os.MkdirAll(dir, 0o755); err != nil {
 					return err
 				}
+			}
+			// The layer's top is the directory's top inside: the same owner
+			// and mode, or its owner could not write in it.
+			if info, err := os.Stat(d.Path); err == nil {
+				if st, ok := info.Sys().(*syscall.Stat_t); ok {
+					os.Chown(upper, int(st.Uid), int(st.Gid))
+				}
+				os.Chmod(upper, info.Mode().Perm())
 			}
 			if err := tool.Run("mount", "-t", "overlay", "overlay", "-o",
 				overlayOptions(d.Path, upper, work), target); err != nil {

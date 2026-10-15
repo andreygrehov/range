@@ -23,6 +23,7 @@ type sessionConfig struct {
 	Hostname    string            `json:"hostname"`
 	Environment map[string]string `json:"environment"`
 	Command     []string          `json:"command,omitempty"`
+	User        *User             `json:"user,omitempty"`
 	NVIDIA      *NVIDIA           `json:"nvidia,omitempty"`
 }
 

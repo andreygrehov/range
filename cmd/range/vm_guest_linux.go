@@ -131,6 +131,12 @@ func runVMGuest() (int, error) {
 		Session: sess, Workload: cfg.Workload, Workdir: cfg.Workdir, ShellPath: cfg.ShellPath,
 		Command: cfg.Command, Mounts: mounts, Dirs: dirs, Env: cfg.Env, DefaultCommand: cfg.DefaultCommand,
 		ControllingTerminal: cfg.Terminal, Tools: "/bin/busybox", LoadFilesystem: vm.LoadFilesystem,
+		CACerts: cfg.CACerts,
+	}
+	if cfg.User != "" {
+		if opts.User, err = session.ParseUser(cfg.User); err != nil {
+			return 1, err
+		}
 	}
 	runErr := session.MountAndRun(context.Background(), opts, vm.DiskName(0), func() {
 		fmt.Fprintln(control, "ready")
